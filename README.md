@@ -1,2 +1,2 @@
 # meal-prep
-Thanksgiving meal prep + Bay Farm shopping trip planner
+Meal prep shopping trip and food prep planner
