@@ -45,9 +45,15 @@ function setPrice(row) {
 }
 
 /* ---------------- auth ---------------- */
-export async function signIn(email) {
-  const { error } = await sb.auth.signInWithOtp({ email: email.trim(), options: { emailRedirectTo: APP_URL } });
-  if (error) fail(error);
+const authMsg = (m) => /invalid login/i.test(m) ? 'Wrong email or password.' : /already registered|already exists/i.test(m) ? 'That email already has an account — use Sign in.' : m;
+export async function signIn(email, password) {
+  const { error } = await sb.auth.signInWithPassword({ email: email.trim(), password });
+  if (error) throw new Error(authMsg(error.message));
+}
+export async function signUp(email, password) {
+  const { data, error } = await sb.auth.signUp({ email: email.trim(), password });
+  if (error) throw new Error(authMsg(error.message));
+  if (!data.session) throw new Error('Account made, but email confirmation is still on in Supabase.');
 }
 export async function signOut() { await sb.auth.signOut(); location.reload(); }
 
@@ -56,7 +62,7 @@ export async function start() {
   app.session = data.session; app.user = data.session?.user || null;
   sb.auth.onAuthStateChange((_e, s) => {
     const was = !!app.session; app.session = s; app.user = s?.user || null;
-    if (s && !was) boot();
+    if (s && !was) setTimeout(boot, 0);
   });
   if (app.session) await boot(); else app.ready = true;
 }
