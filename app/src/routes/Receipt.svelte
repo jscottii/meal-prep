@@ -37,7 +37,7 @@
     rows = list;
     if (!list.length) err = 'No prices found in that photo. Try a sharper, flatter photo, or paste the text.';
   }
-  function pick(e) { file = e.currentTarget.files?.[0] || null; if (file) { preview = URL.createObjectURL(file); read(); } }
+  function pick(e) { file = e.currentTarget.files?.[0] || null; e.currentTarget.value = ''; if (file) { preview = URL.createObjectURL(file); read(); } }
   async function save() {
     saving = true;
     try {
@@ -60,7 +60,10 @@
       <label class="f">Store<select bind:value={storeId}><option value="">Choose…</option>{#each app.stores as s}<option value={s.id}>{s.short}</option>{/each}</select></label>
       <label class="f">Date<input type="date" bind:value={date} /></label>
     </div>
-    <label class="btn" style="margin-top:6px" class:ghost={!storeId}>📷 {file ? 'Use a different photo' : 'Take or choose a photo'}<input type="file" accept="image/*" capture="environment" hidden onchange={pick} disabled={!storeId} /></label>
+    <div class="row" style="margin-top:6px;gap:8px;flex-wrap:wrap">
+      <label class="btn" class:ghost={!storeId}>📷 Take photo<input type="file" accept="image/*" capture="environment" hidden onchange={pick} disabled={!storeId} /></label>
+      <label class="btn ghost">🖼️ Choose from photos<input type="file" accept="image/*" hidden onchange={pick} disabled={!storeId} /></label>
+    </div>
     {#if !storeId}<p class="small muted">Pick the store first.</p>{/if}
     {#if step}<p class="row small"><span class="spinner"></span> {step} {pct ? pct + '%' : ''}</p>{/if}
     {#if preview}<img src={preview} alt="receipt" style="max-width:120px;border-radius:8px;margin-top:8px;border:1px solid var(--line)" />{/if}
