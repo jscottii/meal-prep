@@ -83,7 +83,7 @@ create table if not exists recipes (
   household_id uuid not null references households on delete cascade default my_household(),
   id text not null,
   title text not null, active boolean not null default false, servings numeric, yield text, meal text,
-  fridge text, freeze text, ing text[] not null default '{}', steps text[] not null default '{}', tip text,
+  fridge text, "freeze" text, ing text[] not null default '{}', steps text[] not null default '{}', tip text,
   custom boolean not null default false, source text, items jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   primary key (household_id, id)
@@ -184,6 +184,15 @@ create or replace function has_serp_key() returns boolean
 language sql stable security definer set search_path = public as $$
   select exists(select 1 from household_secrets where household_id = my_household() and coalesce(serpapi_key,'') <> '')
 $$;
+
+-- save the SerpApi key without ever reading it back
+create or replace function set_serp_key(k text) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if my_household() is null then raise exception 'no household'; end if;
+  insert into household_secrets(household_id, serpapi_key, updated_at) values (my_household(), k, now())
+  on conflict (household_id) do update set serpapi_key = excluded.serpapi_key, updated_at = now();
+end $$;
 
 -- ---------------- live sync between phones ----------------
 do $$

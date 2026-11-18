@@ -273,7 +273,7 @@ export async function setPriceByHand(itemId, storeId, price, lock = true) {
 }
 
 export async function saveSerpKey(key) {
-  const { error } = await sb.from('household_secrets').upsert({ household_id: app.household, serpapi_key: key.replace(/\s+/g, ''), updated_at: new Date().toISOString() });
+  const { error } = await sb.rpc('set_serp_key', { k: key.replace(/\s+/g, '') });
   if (error) fail(error);
   app.hasSerpKey = true;
 }
