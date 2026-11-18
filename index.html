@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thanksgiving Meal Prep · Bay Farm Shopper</title>
+<meta name="robots" content="noindex">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#faf7f2;--card:#fff;--ink:#2b2420;--muted:#7a6e66;--line:#ebe3d8;--accent:#b5541c;--accent-soft:#fbeadf;--green:#3d7a4a;--green-soft:#e4f1e6;--gold:#a77d14;--gold-soft:#fbf2d9;--r:14px}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 Inter,system-ui,sans-serif}
+h1,h2,h3{font-family:Fraunces,Georgia,serif;line-height:1.2;margin:0 0 .5em}h1{font-size:28px}h2{font-size:21px;margin-top:1.1em}h3{font-size:17px}
+a{color:var(--accent)}
+header{background:#2b2420;color:#fff;padding:16px 18px 0}
+.top{max-width:1100px;margin:0 auto;display:flex;justify-content:space-between;align-items:flex-end;gap:10px;flex-wrap:wrap}
+.brand{font-family:Fraunces,serif;font-size:20px}.brand small{display:block;font:500 11px Inter;color:#d8c9bb;letter-spacing:.05em;text-transform:uppercase}
+.meta{font-size:12.5px;color:#d8c9bb}
+nav{max-width:1100px;margin:12px auto 0;display:flex;gap:2px;overflow-x:auto}
+nav button{background:none;border:0;color:#e9ddd1;padding:10px 13px;border-radius:10px 10px 0 0;font:500 14px Inter;cursor:pointer;white-space:nowrap}
+nav button.on{background:var(--bg);color:var(--ink)}
+main{max-width:1100px;margin:0 auto;padding:22px 18px 60px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;margin-bottom:14px}
+.grid{display:grid;gap:12px}.g2{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}.g4{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px}.stat b{display:block;font-family:Fraunces,serif;font-size:24px}.stat span{color:var(--muted);font-size:12.5px}
+.pick{cursor:pointer;text-align:left;font:inherit;color:inherit}.pick.on{border-color:var(--green);box-shadow:0 0 0 2px var(--green-soft)}
+.pick .lbl{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600}
+.pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:600;background:var(--line)}
+.live{background:var(--green-soft);color:var(--green)}.est{background:var(--gold-soft);color:var(--gold)}.acc{background:var(--accent-soft);color:var(--accent)}
+.muted{color:var(--muted)}.small{font-size:13px}
+.note{background:var(--gold-soft);border-left:4px solid var(--gold);padding:9px 13px;border-radius:8px;font-size:13.5px;margin:10px 0}
+.btn{border:0;background:var(--accent);color:#fff;border-radius:10px;padding:9px 15px;font:600 14px Inter;cursor:pointer}
+.btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}.btn:disabled{opacity:.55;cursor:wait}
+table{width:100%;border-collapse:collapse;font-size:13.5px}th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);background:#fcfaf6;position:sticky;top:0}
+.rtab td{vertical-align:middle}.rtab input[type=number]{width:88px;padding:6px 8px}.rtab select{max-width:230px;padding:6px 8px;font-size:13px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}.seg button{border:0;background:#fff;padding:6px 10px;font:600 12.5px Inter;cursor:pointer;color:var(--muted)}
+.seg button.on.f{background:var(--green-soft);color:var(--green)}.seg button.on.n{background:#fde8e8;color:#b42318}
+.nf{background:#f3eeea;color:#8a7f77}.drop{border:2px dashed var(--line);border-radius:var(--r);padding:22px;text-align:center;background:#fff}
+details summary{cursor:pointer;color:var(--muted);font-size:13px}pre.raw{white-space:pre-wrap;font-size:12px;background:#fcfaf6;border:1px solid var(--line);border-radius:8px;padding:10px;max-height:300px;overflow:auto}
+.sw{position:relative;display:inline-block;width:42px;height:24px;border-radius:999px;background:#d9cfc4;border:0;cursor:pointer;vertical-align:middle}.sw:after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left .15s}.sw.on{background:var(--green)}.sw.on:after{left:21px}
+.rcard{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.rcard.off{opacity:.55}.rf input[type=text],.rf input[type=number],.rf select,.rf textarea{width:100%;font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:#fff}
+.rf textarea{min-height:90px}.irow{display:grid;grid-template-columns:2fr 80px 32px;gap:6px;margin:6px 0;align-items:center}.irow .newf{grid-column:1/-1;display:grid;grid-template-columns:2fr 1fr 1fr;gap:6px}
+.num{text-align:right;font-variant-numeric:tabular-nums}td.cheap{background:var(--green-soft);font-weight:700;color:var(--green)}td.na{color:#cfc4b8}
+.tw{overflow:auto;border:1px solid var(--line);border-radius:var(--r);background:#fff;max-height:72vh}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.form label{font-size:12.5px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+input[type=number],input[type=text],input[type=password],select{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink)}
+.toggles{display:flex;flex-wrap:wrap;gap:7px;margin:8px 0}
+.tog{border:1px solid var(--line);background:#fff;border-radius:10px;padding:7px 11px;font-size:13.5px;display:flex;gap:6px;align-items:center;cursor:pointer}.tog.on{border-color:var(--green);background:var(--green-soft)}
+.chk{display:flex;gap:9px;align-items:flex-start;padding:4px 0}.chk input{margin-top:4px;width:17px;height:17px;accent-color:var(--green)}.chk.done span{text-decoration:line-through;color:var(--muted)}
+.stop{border-top:1px solid var(--line);padding:12px 0}.stop:first-child{border-top:0}
+.num-badge{display:inline-flex;width:24px;height:24px;border-radius:50%;background:var(--green);color:#fff;font-weight:700;font-size:13px;align-items:center;justify-content:center;margin-right:6px}
+.legs{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:13px;margin:8px 0}
+.legs span.arrow{color:var(--muted)}
+img.map{width:100%;max-width:640px;border-radius:12px;border:1px solid var(--line)}
+.tl{display:flex;gap:10px;padding:6px 0;border-bottom:1px dashed var(--line)}.tl b{color:var(--accent);min-width:48px;font-variant-numeric:tabular-nums}
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid #fff;border-right-color:transparent;border-radius:50%;animation:s .8s linear infinite;vertical-align:-2px;margin-right:6px}@keyframes s{to{transform:rotate(360deg)}}
+.err{background:#fde8e8;border-left:4px solid #b42318;padding:10px 14px;border-radius:8px;font-size:14px}
+footer{max-width:1100px;margin:0 auto;padding:0 18px 40px;color:var(--muted);font-size:12.5px}
+</style>
+</head>
+<body>
+<header>
+  <div class="top">
+    <div class="brand"><small>Cook once · eat all week</small>Thanksgiving Meal Prep · Bay Farm Shopper</div>
+    <div class="meta" id="meta">Loading…</div>
+  </div>
+  <nav id="nav"></nav>
+</header>
+<main id="app"><div class="card">Loading your data…</div></main>
+<footer id="foot"></footer>
+
+<script>
+var D = null, PLAN = null, SEL = 'best', PAGE = 'plan', BUSY = {};
+var CHECK = {}; try { CHECK = JSON.parse(localStorage.getItem('mp_check') || '{}'); } catch (e) {}
+var START = ''; try { START = localStorage.getItem('mp_start') || ''; } catch (e) {}
+function startVal() { return START || (D && D.settings.homeAddress) || ''; }
+function isCoords(v) { return /^\s*-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?\s*$/.test(v || ''); }
+function startLabel(v) { v = v || startVal(); return isCoords(v) ? 'your current location' : v; }
+function setStart(v) {
+  v = String(v || '').trim();
+  START = (!v || (D && v.toLowerCase() === String(D.settings.homeAddress).trim().toLowerCase())) ? '' : v;
+  try { localStorage.setItem('mp_start', START); } catch (e) {}
+}
+var LOCK = null, PASS = ''; try { PASS = localStorage.getItem('mp_pass') || ''; } catch (e) {}
+function savePass(p) { PASS = p || ''; try { localStorage.setItem('mp_pass', PASS); } catch (e) {} }
+function pLock() {
+  var c = LOCK === 'create';
+  return '<div class="card" style="max-width:440px;margin:30px auto"><h1>🔒 ' + (c ? 'Create a household passcode' : 'Household passcode') + '</h1>' +
+    '<p class="muted">' + (c ? 'Pick a passcode for you and your household. Without it, nobody can see your receipts, purchase history or settings, or change your recipes.' : 'Enter the passcode to open your meal prep. This device will remember it.') + '</p>' +
+    '<input type="password" id="pc1" placeholder="Passcode" autocomplete="current-password" style="width:100%;margin-bottom:8px">' +
+    (c ? '<input type="password" id="pc2" placeholder="Type it again" style="width:100%;margin-bottom:8px">' : '') +
+    '<button class="btn" id="pcgo">' + (c ? 'Save passcode' : 'Unlock') + '</button></div>';
+}
+function lockFor(msg) {
+  if (msg === 'NO_PASSCODE') { LOCK = 'create'; render(); return true; }
+  if (msg === 'WRONG_PASSCODE') { var had = !!PASS; savePass(''); LOCK = 'enter'; render(); if (had) showErr('That passcode didn\'t work. Try again.'); return true; }
+  return false;
+}
+function showErr(msg) { $('#app').insertAdjacentHTML('afterbegin', '<div class="err">⚠️ ' + esc(msg) + '</div>'); }
+var PAGES = [['plan','Trip Planner'],['receipts','After Shopping'],['prices','Prices'],['stores','Stores'],['cookday','Cook Day'],['recipes','Recipes'],['history','History'],['week','The Week'],['storage','Storage & Swaps'],['settings','Settings']];
+var $ = function (s) { return document.querySelector(s); };
+var fmt = function (n) { return n == null || isNaN(n) ? '—' : '$' + Number(n).toFixed(2); };
+var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); };
+function saveCheck() { try { localStorage.setItem('mp_check', JSON.stringify(CHECK)); } catch (e) {} }
+var API = 'https://script.google.com/macros/s/AKfycbyHUNnVkJrvMna5a2m9w1fcTGkTVjAsdLagUXAhaDjaEakrlMGBt4J7dB7-ixC3LxKk/exec';
+// Talks to the Google Apps Script backend without Google cookies, so it works
+// in any browser no matter which Google accounts are signed in.
+function call(fn, args, ok) {
+  var payload = (args && args.length) ? args[0] : null;
+  fetch(API, { method: 'POST', credentials: 'omit', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+               body: JSON.stringify({ action: fn, payload: payload, pass: PASS }) })
+  .then(function (r) { return r.json(); }).then(function (res) {
+    if (!res.ok) throw new Error(res.error || 'Something went wrong');
+    ok(res.data);
+  }).catch(function (e) {
+    BUSY = {}; rcReset();
+    if (lockFor(e.message)) return;
+    render(); showErr(e.message || e);
+  });
+}
+
+function load() {
+  call('getAppData', [], function (d) { D = d; render(); if (!PLAN) runPlan(); });
+}
+function runPlan() {
+  var o = overrides();
+  if (o) setStart(o.startAddress);
+  if (o) Object.keys(o).forEach(function (k) { D.settings[k] = o[k]; }); // keep what's typed on screen
+  BUSY.plan = true; render();
+  call('runPlan', [o], function (r) { PLAN = r; SEL = 'best'; BUSY.plan = false; render(); });
+}
+function overrides() {
+  if (!D) return null;
+  var s = D.settings, o = {};
+  var st = document.getElementById('f_start'); o.startAddress = (st && st.value.trim()) || startVal();
+  ['mpg','gasPrice','timeValue','stopMinutes','maxStores'].forEach(function (k) { var el = document.getElementById('f_' + k); o[k] = el ? Number(el.value) : Number(s[k]); });
+  var cm = document.getElementById('f_costcoMember'); o.costcoMember = cm ? cm.checked : s.costcoMember;
+  var mode = document.getElementById('f_costcoMode'); o.costcoMode = mode ? mode.value : s.costcoMode;
+  var en = document.querySelectorAll('[data-store]');
+  o.enabledStores = en.length ? Array.prototype.filter.call(en, function (x) { return x.checked; }).map(function (x) { return x.dataset.store; }).join(',') : s.enabledStores;
+  return o;
+}
+
+function render() {
+  if (LOCK) { $('#nav').innerHTML = ''; $('#meta').innerHTML = ''; $('#app').innerHTML = pLock(); var f1 = $('#pc1'); if (f1) f1.focus(); return; }
+  $('#nav').innerHTML = PAGES.map(function (p) { return '<button class="' + (PAGE === p[0] ? 'on' : '') + '" data-page="' + p[0] + '">' + p[1] + '</button>'; }).join('');
+  if (!D) return;
+  $('#meta').innerHTML = '📍 Starting from ' + esc(startLabel()) + ' · Prices checked: ' + (D.lastRefresh ? esc(D.lastRefresh) : 'not yet');
+  $('#foot').innerHTML = 'Adapted for personal use from <a href="' + D.sourceUrl + '" target="_blank">Tim Laielli\'s meal plan</a>. Live prices come from store websites when reachable; anything marked <b>estimate</b> is a typical East Bay price. Drive times from Google Maps. <a href="' + D.sheetUrl + '" target="_blank">Open data sheet ↗</a>';
+  var f = { plan: pPlan, receipts: pReceipts, prices: pPrices, stores: pStores, cookday: pCook, recipes: pRecipes, history: pHistory, week: pWeek, storage: pStorage, settings: pSettings }[PAGE] || pPlan;
+  $('#app').innerHTML = f();
+}
+
+/* ---------------- Trip planner ---------------- */
+function pPlan() {
+  var s = D.settings, en = String(s.enabledStores).split(',');
+  var h = '<h1>Trip planner</h1><p class="muted">Finds the store combination and driving order with the lowest <b>groceries + gas + your time</b>.</p>';
+  var act = D.recipes.filter(function (r) { return r.active; });
+  h += '<div class="note" style="background:var(--green-soft);border-color:var(--green)">🍲 Shopping for <b>' + act.length + ' of ' + D.recipes.length + ' recipes</b> (' + act.reduce(function (a, r) { return a + (r.servings || 0); }, 0) + ' servings) · ' +
+    (PLAN ? '<b>' + PLAN.itemCount + ' items</b> to buy' + (PLAN.alreadyHave.length ? ', ' + PLAN.alreadyHave.length + ' already bought' : '') : '…') +
+    ' · <a href="#" data-page="recipes">Change recipes</a></div>';
+  h += '<div class="card"><label class="small muted" style="display:block;margin-bottom:4px">Starting from — the trip ends back at home</label>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><input type="text" id="f_start" style="flex:1;min-width:220px" value="' + esc(startVal()) + '" placeholder="Address, place or intersection">' +
+    '<button class="btn ghost" id="startHome">🏠 Home</button><button class="btn ghost" id="startHere">📍 Use my location</button></div>' +
+    (START ? '<div class="small muted" style="margin:-6px 0 10px">Planning from ' + esc(startLabel()) + ' instead of home. First time from a new spot takes ~10 seconds to look up drive times.</div>' : '') +
+    '<div class="form">' +
+    inp('mpg', 'Car MPG (city)', s.mpg) + inp('gasPrice', 'Gas $/gal', s.gasPrice, 0.01) + inp('timeValue', 'Your time ($/hr)', s.timeValue) +
+    inp('stopMinutes', 'Minutes per stop', s.stopMinutes) + inp('maxStores', 'Max stops', s.maxStores) +
+    '<label>Costco<select id="f_costcoMode"><option value="pack"' + (s.costcoMode === 'pack' ? ' selected' : '') + '>Compare full bulk pack</option><option value="unit"' + (s.costcoMode === 'unit' ? ' selected' : '') + '>Compare only what I need</option></select></label>' +
+    '</div><div class="toggles">' + D.stores.map(function (st) {
+      var on = en.indexOf(st.id) >= 0;
+      return '<label class="tog ' + (on ? 'on' : '') + '"><input type="checkbox" data-store="' + st.id + '"' + (on ? ' checked' : '') + '> ' + esc(st.short) + '</label>';
+    }).join('') + '<label class="tog ' + (isTrue(s.costcoMember) ? 'on' : '') + '"><input type="checkbox" id="f_costcoMember"' + (isTrue(s.costcoMember) ? ' checked' : '') + '> I have Costco</label></div>' +
+    '<button class="btn" id="go"' + (BUSY.plan ? ' disabled' : '') + '>' + (BUSY.plan ? '<span class="spinner"></span>Optimizing…' : 'Find best trip') + '</button> ' +
+    '<button class="btn ghost" id="saveDefaults">Save as my defaults</button></div>';
+
+  if (!PLAN) return h + '<div class="card muted">Calculating…</div>';
+  if (!PLAN.best) return h + '<div class="err">No store combination covers the list. Turn on more stores.</div>';
+
+  var picks = [['best','Best overall',PLAN.best],['cheapest','Cheapest groceries + gas',PLAN.cheapest],['fastest','Fastest trip',PLAN.fastest],['leastFuel','Least fuel',PLAN.leastFuel]];
+  h += '<div class="grid g4" style="margin-bottom:14px">' + picks.map(function (p) {
+    var pl = p[2]; if (!pl) return '';
+    return '<button class="stat pick ' + (SEL === p[0] ? 'on' : '') + '" data-sel="' + p[0] + '"><div class="lbl">' + p[1] + '</div><b>' + fmt(pl.groceries + pl.fuel) + '</b><span>' +
+      pl.stores.map(function (x) { return esc(x.short); }).join(' → ') + '<br>' + pl.driveMin + ' min drive · ' + pl.miles + ' mi · ' + fmt(pl.fuel) + ' gas</span></button>';
+  }).join('') + '</div>';
+
+  var pl = SEL === 'alt' ? PLAN._alt : PLAN[SEL];
+  var isBest = pl.key === PLAN.best.key;
+  h += '<div class="grid g4" style="margin-bottom:14px">' +
+    stat(fmt(pl.groceries), 'groceries') + stat(fmt(pl.fuel), 'gas · ' + pl.miles + ' mi round trip') +
+    stat(pl.driveMin + ' + ' + pl.stopMin + ' min', 'driving + in-store stops') + stat(fmt(pl.total), 'true cost incl. your time') + '</div>';
+  if (pl.missing.length) h += '<div class="note">Not available on this route: ' + esc(pl.missing.join(', ')) + '</div>';
+
+  h += '<div class="card"><div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px"><h3 style="margin:0">Route</h3><a class="btn" style="text-decoration:none" href="' + pl.mapsUrl + '" target="_blank">Open in Google Maps ↗</a></div>';
+  if (isBest && PLAN.routeMap) {
+    h += '<div class="legs">' + PLAN.routeMap.legs.map(function (l, i) { return (i ? '' : '<b>' + esc(l.from) + '</b>') + ' <span class="arrow">— ' + l.minutes + ' min / ' + l.miles + ' mi →</span> <b>' + esc(l.to) + '</b>'; }).join('') + '</div>' +
+         '<img class="map" src="' + PLAN.routeMap.img + '" alt="Route map">';
+  } else {
+    h += '<div class="legs"><b>' + (START ? 'Start' : 'Home') + '</b>' + pl.stores.map(function (x, i) { return ' <span class="arrow">→</span> <span class="num-badge">' + (i + 1) + '</span><b>' + esc(x.short) + '</b>'; }).join('') + ' <span class="arrow">→</span> <b>Home</b></div>';
+  }
+  h += '</div>';
+
+  h += '<div class="card">' + pl.stores.map(function (x, i) {
+    return '<div class="stop"><div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px"><h3 style="margin:0"><span class="num-badge">' + (i + 1) + '</span>' + esc(x.name) + '</h3><span class="pill acc">' + x.items.length + ' items · ' + fmt(x.subtotal) + '</span></div>' +
+      '<div class="small muted" style="margin:2px 0 8px 30px">' + esc(x.address) + (x.bulk ? ' · bulk packs' : '') + '</div>' +
+      x.items.map(function (it) {
+        var c = itemById(it.id).have, n = (D.need || {})[it.id], base = Number(itemById(it.id).units) || 1;
+        return '<label class="chk ' + (c ? 'done' : '') + '"><input type="checkbox" data-buy="' + x.id + '|' + it.id + '|' + it.price + '"' + (c ? ' checked' : '') + '><span><b>' + esc(it.name) + '</b> — ' + esc(it.qty) + (n && n !== base ? ' <span class="pill acc">buy ' + n + ' (usually ' + base + ')</span>' : '') +
+          ' <span class="muted">· ' + fmt(it.price) + '</span> ' + srcPill(it.source, it.updated) + (it.matched ? ' <span class="small muted">' + esc(it.matched) + '</span>' : '') + '</span></label>';
+      }).join('') + '</div>';
+  }).join('') + '</div>';
+
+  h += '<h2>Other options compared</h2><div class="tw" style="max-height:none"><table><thead><tr><th>Stops (in order)</th><th class="num">Groceries</th><th class="num">Gas</th><th class="num">Drive</th><th class="num">Miles</th><th class="num">True cost</th><th></th></tr></thead><tbody>' +
+    PLAN.alternatives.map(function (a, i) {
+      return '<tr><td>' + a.stores.map(function (x) { return esc(x.short); }).join(' → ') + '</td><td class="num">' + fmt(a.groceries) + '</td><td class="num">' + fmt(a.fuel) + '</td><td class="num">' + a.driveMin + ' min</td><td class="num">' + a.miles + '</td><td class="num"><b>' + fmt(a.total) + '</b></td><td><button class="btn ghost" data-alt="' + i + '" style="padding:4px 10px">View</button></td></tr>';
+    }).join('') + '</tbody></table></div><p class="small muted">' + PLAN.considered + ' store combinations checked; each one is routed in its fastest order.</p>' +
+    '<div class="card small"><b>Pantry check:</b> ' + esc(D.pantry) + '</div>';
+  var had = (PLAN.alreadyHave || []).map(itemById);
+  h += '<div class="card"><h3 style="margin:0 0 6px">Already bought' + (had.length ? ' (' + had.length + ')' : '') + '</h3>' +
+    (had.length ? '<p class="small muted" style="margin:0 0 6px">These are off your list. Tap undo if you still need one.</p>' + had.map(function (it) {
+      return '<div class="chk"><span>✓ <b>' + esc(it.name) + '</b> <span class="small muted">bought ' + esc(it.haveOn) + '</span> <a href="#" data-unhave="' + it.id + '">undo</a></span></div>';
+    }).join('') : '<p class="small muted" style="margin:0">Nothing yet. Tick items off as you shop, or upload a receipt on <a href="#" data-page="receipts">After Shopping</a>.</p>') +
+    '<p style="margin:10px 0 0"><button class="btn ghost" id="newWeek">' + (BUSY.confirmWeek ? 'Tap again to clear all bought items' : '🗓 Start a new week') + '</button> <span class="small muted">Clears "bought" so everything is back on the list. Your purchase history is kept.</span></p></div>';
+  return h;
+}
+function itemById(id) { return D.items.filter(function (i) { return i.id === id; })[0] || { id: id, name: id, units: 1 }; }
+function inp(k, l, v, step) { return '<label>' + l + '<input type="number" id="f_' + k + '" value="' + esc(v) + '" step="' + (step || 1) + '"></label>'; }
+function stat(b, s) { return '<div class="stat"><b>' + b + '</b><span>' + s + '</span></div>'; }
+function isTrue(v) { return v === true || String(v).toUpperCase() === 'TRUE'; }
+function srcPill(src, upd) {
+  src = String(src || 'estimate');
+  if (src.indexOf('live') === 0) return '<span class="pill live" title="Checked ' + esc(upd) + '">' + esc(src) + (upd ? ' · ' + esc(upd) : '') + '</span>';
+  if (src === 'manual') return '<span class="pill acc">manual</span>';
+  if (src === 'receipt') return '<span class="pill live" title="From your receipt ' + esc(upd) + '">receipt' + (upd ? ' · ' + esc(upd) : '') + '</span>';
+  return '<span class="pill est">estimate</span>';
+}
+
+/* ---------------- Prices ---------------- */
+function pPrices() {
+  var ids = D.stores.map(function (s) { return s.id; });
+  var live = 0, total = 0;
+  D.items.forEach(function (it) { ids.forEach(function (sid) { var e = (D.prices[it.id] || {})[sid]; if (e && e.price != null) { total++; if (String(e.source).indexOf('live') === 0) live++; } }); });
+  var h = '<h1>Prices</h1><p class="muted">Cost of the amount each recipe needs. <span class="pill live">live</span> = checked online · <span class="pill est">estimate</span> = typical price, not yet confirmed. Green = cheapest.</p>' +
+    '<div class="card"><button class="btn" id="refresh"' + (BUSY.refresh ? ' disabled' : '') + '>' + (BUSY.refresh ? '<span class="spinner"></span>Checking stores… (1–4 min)' : 'Check prices now') + '</button> ' +
+    '<span class="small muted">' + live + ' of ' + total + ' prices live · last check ' + esc(D.lastRefresh || 'never') + (D.triggerOn ? ' · auto-checks daily 6am' : '') + '</span>' +
+    (BUSY.refreshResult ? '<div class="note">' + BUSY.refreshResult + '</div>' : '') +
+    (!D.hasSerpKey ? '<div class="note">Safeway, Lucky and Raley\'s only update if you add a SerpApi key in <b>Settings</b>. Grocery Outlet and Costco don\'t post prices online, so edit those in the <a href="' + D.sheetUrl + '" target="_blank">sheet</a> (set Lock = TRUE to keep your number).</div>' : '') + '</div>';
+  h += '<div class="tw"><table><thead><tr><th>Item</th><th>Qty</th>' + D.stores.map(function (s) { return '<th class="num">' + esc(s.short) + '</th>'; }).join('') + '</tr></thead><tbody>';
+  ['Produce','Meat','Dairy & Eggs','Pantry'].forEach(function (cat) {
+    h += '<tr><td colspan="' + (2 + ids.length) + '" style="background:#f6f0e7;font-weight:700">' + cat + '</td></tr>';
+    D.items.filter(function (i) { return i.cat === cat && (D.need || {})[i.id]; }).forEach(function (it) {
+      var row = D.prices[it.id] || {};
+      var vals = ids.filter(function (sid) { var s = D.stores.find(function (x) { return x.id === sid; }); return !s.bulk && row[sid] && row[sid].price != null && !row[sid].notFound; }).map(function (sid) { return row[sid].price; });
+      var min = Math.min.apply(null, vals);
+      h += '<tr><td><b>' + esc(it.name) + '</b><div class="small muted">' + esc(it.usedIn) + '</div></td><td class="small">' + esc(it.qty) + '</td>' + ids.map(function (sid) {
+        var e = row[sid];
+        if (e && e.notFound) return '<td class="num" title="You marked this not found here on ' + esc(e.notFoundOn) + '. Skipped at this store for 30 days.">' + (e.price != null ? '<s class="muted">' + fmt(e.price) + '</s>' : '—') + '<div class="small" style="font-weight:400"><span class="pill nf">not found</span></div></td>';
+        if (!e || e.price == null) return '<td class="num na">—</td>';
+        var isLive = String(e.source).indexOf('live') === 0;
+        return '<td class="num ' + (e.price === min ? 'cheap' : '') + '" title="' + esc(e.matched || '') + ' ' + esc(e.check || '') + '">' + fmt(e.price) + '<div class="small" style="font-weight:400">' + (isLive ? '<span class="pill live">live</span>' : e.source === 'receipt' ? '<span class="pill live">receipt</span>' : e.source === 'manual' ? '<span class="pill acc">manual</span>' : '<span class="pill est">est.</span>') + '</div></td>';
+      }).join('') + '</tr>';
+    });
+  });
+  return h + '</tbody></table></div><p class="small muted">Hover a price to see the exact product matched. Wrong match? Fix the search phrase on the Items tab or type the price yourself and lock it.</p>';
+}
+
+/* ---------------- Stores ---------------- */
+function pStores() {
+  var m = PLAN && PLAN.best ? '' : '';
+  return '<h1>Stores</h1><div class="tw" style="max-height:none"><table><thead><tr><th>Store</th><th>Address</th><th>Hours</th><th>Prices from</th><th>Links</th></tr></thead><tbody>' +
+    D.stores.map(function (s) {
+      var src = { traderjoes: 'traderjoes.com (auto)', target: 'target.com, Alameda store (auto)', serpapi: D.hasSerpKey ? 'Google Shopping (auto)' : 'Google Shopping — needs key', manual: 'You (sheet)' }[s.source] || s.source;
+      return '<tr><td><b>' + esc(s.name) + '</b>' + (s.bulk ? ' <span class="pill acc">membership</span>' : '') + '</td><td class="small">' + esc(s.address) + '</td><td class="small">' + esc(s.hours) + '</td><td class="small">' + src + '</td><td class="small"><a href="' + s.ad + '" target="_blank">Weekly ad ↗</a> · <a href="https://www.google.com/maps/dir/?api=1&origin=' + encodeURIComponent(startVal()) + '&destination=' + encodeURIComponent(s.address) + '" target="_blank">Directions ↗</a></td></tr>';
+    }).join('') + '</tbody></table></div>' +
+    '<div class="note">Thanksgiving is Thu Nov 26 — most stores close early or all day. Shop the weekend before.</div>';
+}
+
+/* ---------------- Content pages ---------------- */
+function pCook() {
+  return '<h1>Cook-day timeline</h1><p class="muted">Start 12:30, dinner at 5:30.</p>' + changedNote() + '<div class="card">' + D.timeline.map(function (t, i) {
+    var k = 'tl' + i, c = CHECK[k];
+    return '<label class="tl chk ' + (c ? 'done' : '') + '"><input type="checkbox" data-chk="' + k + '"' + (c ? ' checked' : '') + '><b>' + t[0] + '</b><span>' + esc(t[1]) + '</span></label>';
+  }).join('') + '</div>';
+}
+var OPEN = null, EDIT = null;
+function recipeTotals() {
+  var act = D.recipes.filter(function (r) { return r.active; });
+  return { n: act.length, servings: act.reduce(function (a, r) { return a + (r.servings || 0); }, 0), items: Object.keys(D.need || {}).length };
+}
+function pRecipes() {
+  if (EDIT) return recipeForm();
+  if (OPEN) {
+    var r = D.recipes.filter(function (x) { return x.id === OPEN; })[0];
+    if (!r) { OPEN = null; return pRecipes(); }
+    var its = Object.keys(r.items).map(function (id) { return '<li>' + esc(itemById(id).name) + ' <span class="muted">× ' + r.items[id] + '</span></li>'; }).join('');
+    return '<a href="#" data-recipe="">← All recipes</a><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;margin-top:8px"><h1 style="margin:0">' + esc(r.title) + '</h1>' +
+      '<span><button class="sw ' + (r.active ? 'on' : '') + '" data-rtoggle="' + r.id + '" title="Include in shopping list"></button> <span class="small">' + (r.active ? 'On the shopping list' : 'Not on the list') + '</span></span></div>' +
+      '<div class="toggles">' + [r.servings ? r.servings + ' servings' : '', r.yield, r.when, r.fridge ? 'Fridge ' + r.fridge : '', r.freeze ? 'Freeze: ' + r.freeze : ''].filter(String).map(function (x) { return '<span class="pill">' + esc(x) + '</span>'; }).join('') + '</div>' +
+      '<div class="grid g2"><div class="card"><h3>Ingredients</h3><ul>' + r.ing.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' +
+      '<h3>On the shopping list</h3><ul class="small">' + (its || '<li class="muted">No shopping items linked yet — tap Edit.</li>') + '</ul></div>' +
+      '<div class="card"><h3>Method</h3><ol>' + r.steps.map(function (x) { return '<li style="margin:.35em 0">' + esc(x) + '</li>'; }).join('') + '</ol>' + (r.tip ? '<div class="note">💡 ' + esc(r.tip) + '</div>' : '') + '</div></div>' +
+      '<p><button class="btn ghost" data-redit="' + r.id + '">✏️ Edit recipe</button> <button class="btn ghost" id="rdel">' + (BUSY.confirmDel ? 'Tap again to delete' : '🗑 Delete') + '</button></p>';
+  }
+  var t = recipeTotals();
+  return '<h1>Recipes</h1><p class="muted">Turn recipes on or off to decide what you\'re making. The shopping list, quantities and trip plan rebuild from the recipes that are on.</p>' +
+    '<div class="grid g4" style="margin-bottom:14px">' + stat(t.n + ' of ' + D.recipes.length, 'recipes on') + stat(t.servings, 'servings') + stat(t.items, 'items to shop for') +
+    stat(PLAN && PLAN.best ? fmt(PLAN.best.groceries) : '—', 'est. groceries (best trip)') + '</div>' +
+    '<p><button class="btn" id="radd">+ Add a recipe</button> ' + (BUSY.recipes ? '<span class="small muted"><span class="spinner" style="border-color:var(--accent);border-right-color:transparent"></span>Updating your list…</span>' : '') + '</p>' +
+    '<div class="grid g2">' + D.recipes.map(function (r) {
+      return '<div class="card rcard ' + (r.active ? '' : 'off') + '"><a href="#" style="text-decoration:none;color:inherit;flex:1" data-recipe="' + r.id + '"><h3 style="margin:0 0 4px">' + esc(r.title) + '</h3><div class="small muted">' +
+        [r.servings ? r.servings + ' servings' : '', r.when, Object.keys(r.items).length + ' shopping items'].filter(String).map(esc).join(' · ') + (r.custom ? ' · <span class="pill acc">yours</span>' : '') + '</div></a>' +
+        '<button class="sw ' + (r.active ? 'on' : '') + '" data-rtoggle="' + r.id + '" title="' + (r.active ? 'On the list — tap to remove' : 'Off — tap to add') + '"></button></div>';
+    }).join('') + '</div>';
+}
+
+function recipeForm() {
+  var e = EDIT, opts = D.items.slice().sort(function (a, b) { return a.name < b.name ? -1 : 1; });
+  return '<a href="#" id="rcancel">← Cancel</a><h1 style="margin-top:8px">' + (e.id ? 'Edit recipe' : 'Add a recipe') + '</h1><div class="card rf"><div class="form">' +
+    '<label style="grid-column:1/-1">Recipe name<input type="text" data-rf="title" value="' + esc(e.title) + '" placeholder="e.g. Turkey chili"></label>' +
+    '<label>Servings<input type="number" data-rf="servings" value="' + esc(e.servings) + '" min="0"></label>' +
+    '<label>Meal<input type="text" data-rf="when" value="' + esc(e.when) + '" placeholder="Dinner, Lunches…"></label>' +
+    '<label>Keeps in fridge<input type="text" data-rf="fridge" value="' + esc(e.fridge) + '" placeholder="4 days"></label>' +
+    '<label>Freezes?<input type="text" data-rf="freeze" value="' + esc(e.freeze) + '" placeholder="Yes — 3 months"></label></div>' +
+    '<h3 style="margin-top:14px">What to buy</h3><p class="small muted" style="margin:0 0 6px">Pick from your list or add a new item. "Units" = how many store packages (½ means you share one with another recipe).</p>' +
+    e.items.map(function (x, i) {
+      return '<div class="irow"><select data-ri="' + i + '|itemId"><option value="">— choose —</option><option value="__new"' + (x.itemId === '__new' ? ' selected' : '') + '>+ New item…</option>' +
+        opts.map(function (it) { return '<option value="' + it.id + '"' + (it.id === x.itemId ? ' selected' : '') + '>' + esc(it.name) + '</option>'; }).join('') + '</select>' +
+        '<input type="number" step="0.25" min="0" data-ri="' + i + '|units" value="' + esc(x.units) + '" title="Units to buy"><button class="btn ghost" style="padding:6px" data-rirm="' + i + '">✕</button>' +
+        (x.itemId === '__new' ? '<div class="newf"><input type="text" data-ri="' + i + '|name" value="' + esc(x.name || '') + '" placeholder="Item name (e.g. Ground turkey)">' +
+          '<select data-ri="' + i + '|cat">' + ['Produce','Meat','Dairy & Eggs','Pantry'].map(function (c) { return '<option' + (c === (x.cat || 'Pantry') ? ' selected' : '') + '>' + c + '</option>'; }).join('') + '</select>' +
+          '<input type="text" data-ri="' + i + '|qty" value="' + esc(x.qty || '') + '" placeholder="Amount (e.g. 2 lb)"></div>' : '') + '</div>';
+    }).join('') + '<button class="btn ghost" id="riadd" style="margin-top:4px">+ Add item</button>' +
+    '<label style="display:block;margin-top:14px">Ingredients (one per line)<textarea data-rf="ing">' + esc(e.ing) + '</textarea></label>' +
+    '<label style="display:block;margin-top:10px">Steps (one per line)<textarea data-rf="steps">' + esc(e.steps) + '</textarea></label>' +
+    '<label style="display:block;margin-top:10px">Tip (optional)<input type="text" data-rf="tip" value="' + esc(e.tip) + '"></label>' +
+    '<p class="small muted">New items start without prices. Tap <b>Check prices now</b> on the Prices page, or add the price from a receipt after you shop.</p>' +
+    '<p><button class="btn" id="rsave"' + (BUSY.rsave ? ' disabled' : '') + '>' + (BUSY.rsave ? '<span class="spinner"></span>Saving…' : 'Save recipe') + '</button></p></div>';
+}
+function editRecipe(r) {
+  EDIT = r ? { id: r.id, title: r.title, servings: r.servings || '', when: r.when || '', fridge: r.fridge || '', freeze: r.freeze || '', tip: r.tip || '',
+               ing: r.ing.join('\n'), steps: r.steps.join('\n'), active: r.active,
+               items: Object.keys(r.items).map(function (id) { return { itemId: id, units: r.items[id] }; }) }
+           : { id: '', title: '', servings: '', when: 'Dinner', fridge: '', freeze: '', tip: '', ing: '', steps: '', active: true, items: [{ itemId: '', units: 1 }] };
+}
+
+/* ---------------- History ---------------- */
+var HQ = '';
+function pHistory() {
+  var rows = (D.purchases || []).filter(function (p) { return p.status !== 'Not found'; });
+  var q = HQ.toLowerCase();
+  var shown = q ? rows.filter(function (p) { return (p.item + ' ' + p.store).toLowerCase().indexOf(q) >= 0; }) : rows;
+  var by = {};
+  rows.forEach(function (p) {
+    var g = by[p.itemId] = by[p.itemId] || { name: p.item, n: 0, last: null, paid: [] };
+    g.n++; if (!g.last) g.last = p;
+    if (p.paid != null) g.paid.push({ v: p.paid, store: p.store });
+  });
+  var stats = Object.keys(by).map(function (k) { return by[k]; }).sort(function (a, b) { return b.n - a.n || (a.name < b.name ? -1 : 1); });
+  var h = '<h1>Purchase history</h1><p class="muted">Everything you\'ve bought, from receipts and items ticked off on the trip planner. Kept even when you start a new week.</p>';
+  if (!rows.length) return h + '<div class="card muted">Nothing yet. Tick items off on the trip planner while you shop, or upload a receipt on <a href="#" data-page="receipts">After Shopping</a>.</div>';
+  h += '<h2>By item</h2><div class="tw" style="max-height:340px"><table><thead><tr><th>Item</th><th class="num">Times</th><th>Last bought</th><th class="num">Last paid</th><th class="num">Average</th><th>Lowest</th></tr></thead><tbody>' +
+    stats.map(function (g) {
+      var low = g.paid.slice().sort(function (a, b) { return a.v - b.v; })[0];
+      var avg = g.paid.length ? g.paid.reduce(function (a, x) { return a + x.v; }, 0) / g.paid.length : null;
+      return '<tr><td><b>' + esc(g.name) + '</b></td><td class="num">' + g.n + '</td><td class="small">' + esc(g.last.date) + ' · ' + esc(g.last.store) + '</td><td class="num">' + fmt(g.last.paid) + '</td><td class="num">' + fmt(avg) + '</td><td class="small">' + (low ? fmt(low.v) + ' at ' + esc(low.store) : '—') + '</td></tr>';
+    }).join('') + '</tbody></table></div>';
+  h += '<h2>All purchases</h2><input type="text" id="hq" value="' + esc(HQ) + '" placeholder="Search items or stores" style="width:100%;max-width:360px;margin-bottom:10px">' +
+    '<div class="tw"><table><thead><tr><th>Date</th><th>Item</th><th>Store</th><th class="num">Paid</th><th class="num">App price</th><th>How</th></tr></thead><tbody>' +
+    shown.map(function (p) {
+      return '<tr><td class="small">' + esc(p.date) + '</td><td>' + esc(p.item) + '</td><td class="small">' + esc(p.store) + '</td><td class="num">' + fmt(p.paid) + '</td><td class="num muted">' + fmt(p.planned) + '</td><td class="small">' +
+        (p.status === 'Found' ? '<span class="pill live">receipt</span>' + (p.fileUrl ? ' <a href="' + p.fileUrl + '" target="_blank">photo</a>' : '') : '<span class="pill">ticked off</span>') + '</td></tr>';
+    }).join('') + '</tbody></table></div>';
+  return h;
+}
+function originalPlan() { var ids = ['pancake-bake','yogurt-jars','farro-bowl','cider-chicken','rigatoni']; return D.recipes.filter(function (r) { return r.active; }).map(function (r) { return r.id; }).sort().join() === ids.slice().sort().join(); }
+function changedNote() { return originalPlan() ? '' : '<div class="note">This schedule was written for the original 5 recipes. You\'ve changed your recipes, so adjust it to fit.</div>'; }
+function pWeek() {
+  return '<h1>The week</h1>' + changedNote() + '<div class="tw" style="max-height:none"><table><thead><tr><th>Day</th><th>Breakfast</th><th>Lunch</th><th>Dinner</th></tr></thead><tbody>' +
+    D.week.map(function (w) { return '<tr><td><b>' + w[0] + '</b></td><td>' + w[1] + '</td><td>' + w[2] + '</td><td>' + w[3] + '</td></tr>'; }).join('') + '</tbody></table></div>' +
+    '<div class="card small"><b>With a little one:</b> let them build their own sliders and yogurt jars, serve farro-bowl parts separately, and call the rigatoni "orange sauce pasta."</div>';
+}
+function pStorage() {
+  var s = D.storage, li = function (a) { return '<ul>' + a.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>'; };
+  return '<h1>Storage, freezing & swaps</h1><div class="grid g2"><div class="card"><h3>❄️ Freeze</h3>' + li(s.freeze) + '<h3>🚫 Don\'t freeze</h3>' + li(s.noFreeze) + '</div><div class="card"><h3>🔁 Swaps</h3><table>' +
+    s.swaps.map(function (x) { return '<tr><td>' + x[0] + '</td><td>→ ' + x[1] + '</td></tr>'; }).join('') + '</table></div></div><div class="card"><h3>♻️ Leftovers</h3>' + li(s.leftovers) + '</div>';
+}
+
+/* ---------------- After shopping: receipts + found / not found ---------------- */
+var RC = { step: 'pick', storeId: '', date: '', read: null, rows: {}, showAll: false, result: null, err: '' };
+function today() { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+function currentPlan() { return PLAN ? (SEL === 'alt' ? PLAN._alt : PLAN[SEL]) || PLAN.best : null; }
+function plannedIds(storeId) {
+  var pl = currentPlan(); if (!pl) return [];
+  var st = pl.stores.filter(function (x) { return x.id === storeId; })[0];
+  return st ? st.items.map(function (i) { return i.id; }) : [];
+}
+function plannedPrice(itemId, storeId) { var e = (D.prices[itemId] || {})[storeId]; return e && e.price != null ? e.price : null; }
+function rcStart(read) {
+  RC.read = read; RC.rows = {}; RC.showAll = false;
+  var ids = plannedIds(RC.storeId);
+  D.items.forEach(function (it) {
+    var sg = read && read.suggestions[it.id];
+    if (sg) RC.rows[it.id] = { status: 'found', paid: sg.price, line: sg.text, i: sg.i };
+    else if (ids.indexOf(it.id) >= 0) RC.rows[it.id] = { status: '', paid: '', line: '', i: '' };
+  });
+  if (!Object.keys(RC.rows).length) RC.showAll = true;
+  RC.step = 'review';
+}
+
+function pReceipts() {
+  var h = '<h1>After shopping</h1><p class="muted">Upload your receipt to check the app\'s prices against what you actually paid, and mark anything the store didn\'t have. Confirmed prices replace the estimates, and items marked <b>not found</b> are planned at a different store for the next 30 days.</p>';
+  if (RC.err) h += '<div class="err">⚠️ ' + esc(RC.err) + '</div>';
+  if (RC.step === 'pick' || RC.step === 'reading') return h + rcPick() + rcHistory();
+  if (RC.step === 'review' || RC.step === 'saving') return h + rcReview();
+  return h + rcDone() + rcHistory();
+}
+
+function rcPick() {
+  var pl = currentPlan();
+  if (!RC.storeId) RC.storeId = (pl && pl.stores[0] && pl.stores[0].id) || D.stores[0].id;
+  if (!RC.date) RC.date = today();
+  var reading = RC.step === 'reading';
+  return '<div class="card"><div class="form">' +
+    '<label>Store<select id="rc_store">' + D.stores.map(function (s) { return '<option value="' + s.id + '"' + (s.id === RC.storeId ? ' selected' : '') + '>' + esc(s.short) + '</option>'; }).join('') + '</select></label>' +
+    '<label>Shopping date<input type="date" id="rc_date" value="' + esc(RC.date) + '"></label></div>' +
+    '<div class="drop" style="margin-top:12px">' + (reading
+      ? '<p><span class="spinner" style="border-color:var(--accent);border-right-color:transparent"></span>Reading your receipt… (10–30 seconds)</p>'
+      : '<p style="margin:0 0 10px"><b>Take a photo of the receipt or upload one</b><br><span class="small muted">Lay it flat in good light. Long receipts: one photo is fine if the text is readable. JPG, PNG or PDF.</span></p>' +
+        '<label class="btn" style="display:inline-block">📷 Choose photo or PDF<input type="file" id="rc_file" accept="image/*,application/pdf" style="display:none"></label>') +
+    '</div><p class="small" style="margin:10px 0 0"><a href="#" id="rc_noreceipt">No receipt? Just mark what you found →</a></p></div>';
+}
+
+function rcReview() {
+  var st = D.stores.filter(function (s) { return s.id === RC.storeId; })[0];
+  var read = RC.read, lines = read ? read.lines : [];
+  var ids = Object.keys(RC.rows);
+  var list = RC.showAll ? D.items : D.items.filter(function (it) { return ids.indexOf(it.id) >= 0; });
+  var used = {}; ids.forEach(function (k) { if (RC.rows[k].i !== '' && RC.rows[k].i != null) used[RC.rows[k].i] = 1; });
+  var h = '<div class="card"><div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:center"><h3 style="margin:0">' + esc(st.name) + ' · ' + esc(RC.date) + '</h3>' +
+    (read ? '<span class="small muted">' + lines.length + ' lines read' + (read.total ? ' · receipt total ' + fmt(read.total) : '') + ' · <a href="' + read.fileUrl + '" target="_blank">view photo ↗</a></span>' : '<span class="small muted">No receipt — marking found / not found only</span>') + '</div>' +
+    '<p class="small muted" style="margin:6px 0 10px">Check each match, fix any price, and mark items <b>Found</b> or <b>Not found</b>. Leave both off for things you didn\'t look for.</p>' +
+    '<div class="tw" style="max-height:none"><table class="rtab"><thead><tr><th>Item</th><th class="num">App price</th>' + (read ? '<th>Receipt line</th>' : '') + '<th>Paid</th><th>At this store?</th></tr></thead><tbody>' +
+    list.map(function (it) {
+      var r = RC.rows[it.id] || { status: '', paid: '', line: '', i: '' };
+      var pp = plannedPrice(it.id, RC.storeId);
+      var diff = (r.status === 'found' && r.paid !== '' && pp != null) ? Number(r.paid) - pp : null;
+      return '<tr><td><b>' + esc(it.name) + '</b><div class="small muted">' + esc(it.qty) + '</div></td>' +
+        '<td class="num">' + fmt(pp) + (diff != null && Math.abs(diff) >= 0.01 ? '<div class="small" style="color:' + (diff > 0 ? '#b42318' : 'var(--green)') + '">' + (diff > 0 ? '+' : '−') + fmt(Math.abs(diff)).slice(1) + '</div>' : '') + '</td>' +
+        (read ? '<td><select data-rcline="' + it.id + '"><option value="">— not on receipt —</option>' + lines.map(function (l) {
+          var taken = used[l.i] && String(r.i) !== String(l.i);
+          return '<option value="' + l.i + '"' + (String(r.i) === String(l.i) ? ' selected' : '') + (taken ? ' disabled' : '') + '>' + esc(l.text.slice(0, 28)) + ' · ' + fmt(l.price) + '</option>';
+        }).join('') + '</select></td>' : '') +
+        '<td>$<input type="number" step="0.01" min="0" data-rcpaid="' + it.id + '" value="' + esc(r.paid) + '" placeholder="—"></td>' +
+        '<td><span class="seg"><button class="f ' + (r.status === 'found' ? 'on' : '') + '" data-rcstat="' + it.id + '|found">✓ Found</button><button class="n ' + (r.status === 'notfound' ? 'on' : '') + '" data-rcstat="' + it.id + '|notfound">✗ Not found</button></span></td></tr>';
+    }).join('') + '</tbody></table></div>' +
+    '<p style="margin:10px 0 0"><a href="#" id="rc_all">' + (RC.showAll ? 'Show only matched / planned items' : 'Show all ' + D.items.length + ' items') + '</a></p>';
+  if (read) {
+    var spare = lines.filter(function (l) { return !used[l.i]; });
+    if (spare.length) h += '<details style="margin-top:10px"><summary>' + spare.length + ' receipt lines not matched to the list</summary><ul class="small">' + spare.map(function (l) { return '<li>' + esc(l.text) + ' · ' + fmt(l.price) + '</li>'; }).join('') + '</ul></details>';
+    h += '<details style="margin-top:6px"><summary>Text read from the photo</summary><pre class="raw">' + esc(read.rawText || '(none)') + '</pre></details>';
+  }
+  var saving = RC.step === 'saving';
+  return h + '<p style="margin-top:14px"><button class="btn" id="rc_save"' + (saving ? ' disabled' : '') + '>' + (saving ? '<span class="spinner"></span>Saving…' : 'Save & check accuracy') + '</button> <button class="btn ghost" id="rc_cancel">Start over</button></p></div>';
+}
+
+function rcDone() {
+  var r = RC.result, s = r.summary;
+  var h = '<div class="card" style="border-color:var(--green)"><h3>Saved — ' + esc(r.store) + '</h3><div class="grid g4" style="margin:8px 0 12px">' +
+    stat(s.accuracyPct == null ? '—' : s.accuracyPct + '%', 'of prices within 5% / 25¢') +
+    stat(fmt(s.planned), 'app expected') + stat(fmt(s.paid), 'you paid') +
+    stat((s.diff > 0 ? '+' : s.diff < 0 ? '−' : '') + fmt(Math.abs(s.diff)), s.diff > 0 ? 'more than expected' : s.diff < 0 ? 'less than expected' : 'difference') + '</div>';
+  if (s.misses.length) h += '<b class="small">Biggest differences</b><table style="margin:6px 0 10px"><tbody>' + s.misses.map(function (m) { return '<tr><td>' + esc(m.name) + '</td><td class="num">' + fmt(m.planned) + ' → ' + fmt(m.paid) + '</td><td class="num" style="color:' + (m.diff > 0 ? '#b42318' : 'var(--green)') + '">' + (m.diff > 0 ? '+' : '−') + fmt(Math.abs(m.diff)).slice(1) + '</td></tr>'; }).join('') + '</tbody></table>';
+  if (s.notFound.length) h += '<div class="note"><b>Not found at ' + esc(r.store) + ':</b> ' + esc(s.notFound.join(', ')) + '. The planner will get these somewhere else for the next 30 days.</div>';
+  return h + '<p class="small muted">Prices you confirmed now show as <span class="pill live">receipt</span> and won\'t be overwritten by online price checks for 2 weeks.</p><button class="btn" id="rc_again">Add another receipt</button> <button class="btn ghost" data-page="plan">Back to trip planner</button></div>';
+}
+
+function rcHistory() {
+  var hs = D.history || [];
+  if (!hs.length) return '';
+  return '<h2>Past receipts</h2><div class="tw" style="max-height:none"><table><thead><tr><th>Date</th><th>Store</th><th class="num">Accurate</th><th class="num">Expected</th><th class="num">Paid</th><th>Not found</th><th></th></tr></thead><tbody>' +
+    hs.map(function (g) { var s = g.summary; return '<tr><td>' + esc(g.date) + '</td><td>' + esc(g.store) + '</td><td class="num">' + (s.accuracyPct == null ? '—' : s.accuracyPct + '%') + '</td><td class="num">' + fmt(s.planned) + '</td><td class="num">' + fmt(s.paid) + '</td><td class="small">' + esc(s.notFound.join(', ') || '—') + '</td><td class="small">' + (g.fileUrl ? '<a href="' + g.fileUrl + '" target="_blank">photo ↗</a>' : '') + '</td></tr>'; }).join('') +
+    '</tbody></table></div>';
+}
+
+/** Shrink big phone photos before upload (keeps text sharp, cuts upload time). */
+function fileToBase64(file, cb) {
+  if (file.size > 15 * 1024 * 1024) { cb(new Error('That file is over 15 MB. Try a smaller photo.')); return; }
+  if (!/^image\//.test(file.type) || file.type === 'image/gif') {
+    var fr = new FileReader(); fr.onload = function () { cb(null, String(fr.result).split(',')[1], file.type || 'application/pdf'); }; fr.onerror = function () { cb(new Error('Could not read that file.')); }; fr.readAsDataURL(file); return;
+  }
+  var url = URL.createObjectURL(file), img = new Image();
+  img.onload = function () {
+    var max = 2200, w = img.naturalWidth, h = img.naturalHeight, k = Math.min(1, max / Math.max(w, h));
+    var c = document.createElement('canvas'); c.width = Math.round(w * k); c.height = Math.round(h * k);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+    cb(null, c.toDataURL('image/jpeg', 0.88).split(',')[1], 'image/jpeg');
+  };
+  img.onerror = function () { URL.revokeObjectURL(url); cb(new Error('Could not open that photo. Try a JPG or PNG.')); };
+  img.src = url;
+}
+function rcReset() { if (RC.step === 'reading') RC.step = 'pick'; if (RC.step === 'saving') RC.step = 'review'; }
+function rcErr(msg) { RC.err = msg; RC.step = RC.read ? 'review' : 'pick'; render(); }
+
+/* ---------------- Settings ---------------- */
+function pSettings() {
+  var s = D.settings;
+  return '<h1>Settings</h1><div class="card"><div class="form">' +
+    '<label style="grid-column:1/-1">Home address (start and end of every trip)<input type="text" id="s_home" value="' + esc(s.homeAddress) + '"></label>' +
+    '<label>Trader Joe\'s store code (optional)<input type="text" id="s_tj" value="' + esc(s.traderJoesStoreCode) + '"></label>' +
+    '<label>Target store ID<input type="text" id="s_tgt" value="' + esc(s.targetStoreId) + '"></label>' +
+    '<label>SerpApi key ' + (D.hasSerpKey ? '(saved ✓)' : '(optional)') + '<input type="password" id="s_serp" placeholder="' + (D.hasSerpKey ? '•••••• leave blank to keep' : 'paste key') + '"></label>' +
+    '</div><p><button class="btn" id="saveSettings">Save</button></p>' +
+    '<p class="small muted">Changing your address rebuilds drive times on the next plan (takes ~20 sec). The SerpApi key is stored in the script\'s private properties, not in the sheet. It adds Safeway, Lucky and Raley\'s prices via Google Shopping (online prices, can differ from shelf).</p></div>' +
+    '<div class="card"><h3>Automatic price checks</h3><p class="small">' + (D.triggerOn ? '✅ Prices are re-checked every morning around 6am.' : 'Off — prices only update when you press "Check prices now".') + '</p>' +
+    '<button class="btn ghost" id="trigger">' + (D.triggerOn ? 'Turn off daily check' : 'Turn on daily check') + '</button> <button class="btn ghost" id="rebuild">Rebuild drive times</button></div>' +
+    '<div class="card"><h3>Household passcode</h3><div class="form"><label>New passcode<input type="password" id="np1"></label><label>Type it again<input type="password" id="np2"></label></div>' +
+    '<p><button class="btn ghost" id="npsave">Change passcode</button> <button class="btn ghost" id="lockdev">🔒 Lock this device</button></p>' +
+    '<p class="small muted">Share the passcode with your household. "Lock this device" makes this phone or computer ask for it again.</p></div>' +
+    '<div class="card small">All data (stores, items, search phrases, prices) lives in your <a href="' + D.sheetUrl + '" target="_blank">Google Sheet</a> — edit it there to add stores or fix matches.</div>';
+}
+
+/* ---------------- Events ---------------- */
+document.addEventListener('click', function (e) {
+  var t = e.target.closest('button, a, [data-sel]'); if (!t) return;
+  if (t.dataset.page) { PAGE = t.dataset.page; OPEN = null; render(); window.scrollTo(0, 0); }
+  else if (t.id === 'go') runPlan();
+  else if (t.id === 'pcgo') {
+    var a = ($('#pc1') || {}).value || '', b2 = ($('#pc2') || {}).value;
+    if (LOCK === 'create') {
+      if (a.length < 4) { showErr('Use at least 4 characters.'); return; }
+      if (a !== b2) { showErr('The two passcodes don\'t match.'); return; }
+      t.disabled = true;
+      call('setPasscode', [{ newPass: a }], function () { savePass(a); LOCK = null; render(); load(); });
+    } else { if (!a) return; savePass(a); LOCK = null; $('#app').innerHTML = '<div class="card">Unlocking…</div>'; load(); }
+  }
+  else if (t.id === 'npsave') {
+    var n1 = $('#np1').value, n2 = $('#np2').value;
+    if (n1.length < 4) { showErr('Use at least 4 characters.'); return; }
+    if (n1 !== n2) { showErr('The two passcodes don\'t match.'); return; }
+    call('setPasscode', [{ newPass: n1 }], function () { savePass(n1); render(); showErr('✓ Passcode changed. Share the new one with your household.'); });
+  }
+  else if (t.id === 'lockdev') { savePass(''); LOCK = 'enter'; D = null; PLAN = null; PAGE = 'plan'; render(); }
+  else if (t.id === 'rc_noreceipt') { e.preventDefault(); RC.err = ''; rcStart(null); render(); }
+  else if (t.id === 'rc_all') { e.preventDefault(); RC.showAll = !RC.showAll; render(); }
+  else if (t.id === 'rc_cancel') { RC.step = 'pick'; RC.read = null; RC.err = ''; render(); }
+  else if (t.id === 'rc_again') { RC.step = 'pick'; RC.read = null; RC.result = null; RC.err = ''; render(); }
+  else if (t.dataset.rcstat) {
+    var sp = t.dataset.rcstat.split('|'), row = RC.rows[sp[0]] = RC.rows[sp[0]] || { status: '', paid: '', line: '', i: '' };
+    row.status = row.status === sp[1] ? '' : sp[1]; render();
+  }
+  else if (t.id === 'rc_save') {
+    var rows = Object.keys(RC.rows).filter(function (k) { return RC.rows[k].status; }).map(function (k) {
+      var r = RC.rows[k]; return { itemId: k, status: r.status, paid: r.paid === '' ? null : Number(r.paid), line: r.line };
+    });
+    if (!rows.length) { RC.err = 'Mark at least one item as Found or Not found.'; render(); return; }
+    RC.err = ''; RC.step = 'saving'; render();
+    call('saveReceipt', [{ storeId: RC.storeId, date: RC.date, fileUrl: RC.read ? RC.read.fileUrl : '', rows: rows }], function (res) {
+      D.prices = res.prices; D.history = res.history; D.items = res.items; D.purchases = res.purchases; RC.result = res; RC.step = 'done'; render(); window.scrollTo(0, 0);
+      PLAN = null; runPlan();
+    });
+  }
+  else if (t.id === 'startHome') { $('#f_start').value = D.settings.homeAddress; runPlan(); }
+  else if (t.id === 'startHere') {
+    if (!navigator.geolocation) { showErr('This browser can\'t share your location. Type an address instead.'); return; }
+    t.disabled = true; t.textContent = 'Locating…';
+    navigator.geolocation.getCurrentPosition(function (p) {
+      $('#f_start').value = p.coords.latitude.toFixed(4) + ',' + p.coords.longitude.toFixed(4);
+      runPlan();
+    }, function (err) {
+      t.disabled = false; t.textContent = '📍 Use my location';
+      showErr('Couldn\'t get your location (' + err.message + '). Type an address instead.');
+    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+  }
+  else if (t.dataset.sel) { SEL = t.dataset.sel; render(); }
+  else if (t.dataset.alt != null) { PLAN._alt = PLAN.alternatives[+t.dataset.alt]; SEL = 'alt'; render(); window.scrollTo(0, 300); }
+  else if (t.dataset.recipe != null) { e.preventDefault(); OPEN = t.dataset.recipe || null; BUSY.confirmDel = false; render(); window.scrollTo(0, 0); }
+  else if (t.dataset.rtoggle) {
+    e.preventDefault();
+    var rr = D.recipes.filter(function (x) { return x.id === t.dataset.rtoggle; })[0];
+    rr.active = !rr.active; BUSY.recipes = true; render();
+    call('setRecipeActive', [{ id: rr.id, active: rr.active }], function (d) { D = d; BUSY.recipes = false; PLAN = null; render(); runPlan(); });
+  }
+  else if (t.id === 'radd') { editRecipe(null); render(); window.scrollTo(0, 0); }
+  else if (t.dataset.redit) { editRecipe(D.recipes.filter(function (x) { return x.id === t.dataset.redit; })[0]); render(); window.scrollTo(0, 0); }
+  else if (t.id === 'rcancel') { e.preventDefault(); EDIT = null; render(); }
+  else if (t.id === 'riadd') { EDIT.items.push({ itemId: '', units: 1 }); render(); }
+  else if (t.dataset.rirm != null) { EDIT.items.splice(+t.dataset.rirm, 1); render(); }
+  else if (t.id === 'rsave') {
+    if (!String(EDIT.title).trim()) { showErr('Give the recipe a name.'); return; }
+    var items = EDIT.items.filter(function (x) { return x.itemId && (x.itemId !== '__new' || String(x.name || '').trim()); }).map(function (x) {
+      return x.itemId === '__new' ? { units: Number(x.units) || 1, newItem: { name: x.name, cat: x.cat || 'Pantry', qty: x.qty } } : { itemId: x.itemId, units: Number(x.units) || 1 };
+    });
+    BUSY.rsave = true; render();
+    call('saveRecipe', [{ id: EDIT.id, title: EDIT.title, servings: EDIT.servings, when: EDIT.when, fridge: EDIT.fridge, freeze: EDIT.freeze, tip: EDIT.tip, ing: EDIT.ing, steps: EDIT.steps, active: EDIT.active, items: items }], function (d) {
+      D = d; BUSY.rsave = false; OPEN = d.savedRecipeId; EDIT = null; PLAN = null; render(); runPlan();
+    });
+  }
+  else if (t.id === 'rdel') {
+    if (!BUSY.confirmDel) { BUSY.confirmDel = true; render(); return; }
+    BUSY.confirmDel = false;
+    call('deleteRecipe', [{ id: OPEN }], function (d) { D = d; OPEN = null; PLAN = null; render(); runPlan(); });
+  }
+  else if (t.dataset.unhave) {
+    e.preventDefault();
+    call('setHave', [{ itemIds: [t.dataset.unhave], have: false }], function (d) { D.items = d.items; D.purchases = d.purchases; PLAN = null; render(); runPlan(); });
+  }
+  else if (t.id === 'newWeek') {
+    if (!BUSY.confirmWeek) { BUSY.confirmWeek = true; render(); return; }
+    BUSY.confirmWeek = false;
+    call('startNewWeek', [], function (d) { D = d; PLAN = null; render(); runPlan(); });
+  }
+  else if (t.id === 'clearChk') { CHECK = {}; saveCheck(); render(); }
+  else if (t.id === 'saveDefaults') { var o = overrides(); call('saveSettings', [o], function (d) { D = d; render(); }); }
+  else if (t.id === 'refresh') {
+    BUSY.refresh = true; BUSY.refreshResult = ''; render();
+    call('refreshPrices', [], function (r) {
+      D.prices = r.prices; D.lastRefresh = r.lastRefresh; BUSY.refresh = false;
+      BUSY.refreshResult = '✓ ' + r.stats.live + ' prices updated live' + (r.stats.failed ? ' · ' + r.stats.failed + ' lookups failed (kept last price — see Refresh Log tab)' : '') + ' · ' + r.stats.skipped + ' locked';
+      render(); runPlan();
+    });
+  }
+  else if (t.id === 'saveSettings') {
+    var o = { homeAddress: $('#s_home').value, traderJoesStoreCode: $('#s_tj').value, targetStoreId: $('#s_tgt').value };
+    if ($('#s_serp').value) o.serpApiKey = $('#s_serp').value;
+    t.disabled = true; call('saveSettings', [o], function (d) { D = d; PLAN = null; render(); runPlan(); });
+  }
+  else if (t.id === 'trigger') { t.disabled = true; call(D.triggerOn ? 'removeDailyRefresh' : 'installDailyRefresh', [], function () { D.triggerOn = !D.triggerOn; render(); }); }
+  else if (t.id === 'rebuild') { t.disabled = true; t.textContent = 'Rebuilding…'; call('rebuildDriveTimes', [], function () { runPlan(); PAGE = 'plan'; }); }
+});
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Enter' && e.target.id === 'f_start') { e.preventDefault(); runPlan(); }
+  if (e.key === 'Enter' && (e.target.id === 'pc1' || e.target.id === 'pc2')) { e.preventDefault(); $('#pcgo').click(); }
+});
+document.addEventListener('change', function (e) {
+  var t = e.target;
+  if (t.dataset.chk) { CHECK[t.dataset.chk] = t.checked; saveCheck(); render(); }
+  if (t.dataset.buy) {
+    var bp = t.dataset.buy.split('|'), it = itemById(bp[1]), pr = {}; pr[bp[1]] = Number(bp[2]);
+    it.have = t.checked; it.haveOn = t.checked ? 'today' : ''; render();   // stays on today's list, struck through
+    call('setHave', [{ itemIds: [bp[1]], have: t.checked, storeId: bp[0], prices: pr }], function (d) { D.items = d.items; D.purchases = d.purchases; render(); });
+  }
+  if (t.dataset.rf && EDIT) EDIT[t.dataset.rf] = t.value;
+  if (t.dataset.ri && EDIT) {
+    var ri = t.dataset.ri.split('|'), row = EDIT.items[+ri[0]];
+    row[ri[1]] = t.value;
+    if (ri[1] === 'itemId') render();
+  }
+  if (t.id === 'hq') { HQ = t.value; render(); }
+  if (t.id === 'rc_store') RC.storeId = t.value;
+  if (t.id === 'rc_date') RC.date = t.value;
+  if (t.dataset.rcline) {
+    var row = RC.rows[t.dataset.rcline] = RC.rows[t.dataset.rcline] || { status: '', paid: '', line: '', i: '' };
+    var l = RC.read.lines.filter(function (x) { return String(x.i) === t.value; })[0];
+    row.i = l ? l.i : ''; row.line = l ? l.text : '';
+    if (l) { row.paid = l.price; row.status = 'found'; } else { row.paid = ''; row.status = ''; }
+    render();
+  }
+  if (t.dataset.rcpaid) {
+    var rp = RC.rows[t.dataset.rcpaid] = RC.rows[t.dataset.rcpaid] || { status: '', paid: '', line: '', i: '' };
+    rp.paid = t.value; if (t.value !== '' && !rp.status) rp.status = 'found';
+    render();
+  }
+  if (t.id === 'rc_file' && t.files && t.files[0]) {
+    RC.err = ''; RC.step = 'reading'; render();
+    fileToBase64(t.files[0], function (err, data, mime) {
+      if (err) { rcErr(err.message); return; }
+      call('readReceipt', [{ storeId: RC.storeId, mime: mime, data: data, name: t.files[0].name }], function (read) {
+        if (!read.lines.length) RC.err = 'Couldn\'t read item prices from that photo. Fill them in below, or try a flatter, closer photo.';
+        rcStart(read); render();
+      });
+    });
+  }
+  if (t.dataset.store || t.id === 'f_costcoMember') t.closest('.tog').classList.toggle('on', t.checked);
+});
+load();
+</script>
+</body>
+</html>
