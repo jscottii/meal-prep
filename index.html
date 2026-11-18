@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Thanksgiving Meal Prep · Bay Farm Shopper</title>
+<title>Meal Prep · Bay Farm Shopper</title>
 <meta name="robots" content="noindex">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -55,6 +55,10 @@ input[type=number],input[type=text],input[type=password],select{font:inherit;pad
 img.map{width:100%;max-width:640px;border-radius:12px;border:1px solid var(--line)}
 .tl{display:flex;gap:10px;padding:6px 0;border-bottom:1px dashed var(--line)}.tl b{color:var(--accent);min-width:48px;font-variant-numeric:tabular-nums}
 .spinner{display:inline-block;width:14px;height:14px;border:2px solid #fff;border-right-color:transparent;border-radius:50%;animation:s .8s linear infinite;vertical-align:-2px;margin-right:6px}@keyframes s{to{transform:rotate(360deg)}}
+.wk td{vertical-align:middle}.wk select{max-width:150px;font-size:12.5px;padding:5px 6px}.wk .ppl{display:inline-flex;align-items:center;gap:4px}.wk .ppl button{border:1px solid var(--line);background:#fff;border-radius:7px;width:26px;height:26px;cursor:pointer;font-weight:700}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:#fff;border-radius:12px;padding:8px 11px;margin:4px;cursor:pointer;font:inherit;text-align:left}.chip.on{border-color:var(--green);background:var(--green-soft)}
+.post{display:flex;justify-content:space-between;gap:10px;align-items:center;border-top:1px solid var(--line);padding:10px 0}.post:first-child{border-top:0}
+.ok{background:var(--green-soft);border-left:4px solid var(--green);padding:9px 13px;border-radius:8px;font-size:13.5px;margin:10px 0}
 .err{background:#fde8e8;border-left:4px solid #b42318;padding:10px 14px;border-radius:8px;font-size:14px}
 footer{max-width:1100px;margin:0 auto;padding:0 18px 40px;color:var(--muted);font-size:12.5px}
 </style>
@@ -62,7 +66,7 @@ footer{max-width:1100px;margin:0 auto;padding:0 18px 40px;color:var(--muted);fon
 <body>
 <header>
   <div class="top">
-    <div class="brand"><small>Cook once · eat all week</small>Thanksgiving Meal Prep · Bay Farm Shopper</div>
+    <div class="brand"><small>Cook once · eat all week</small>Meal Prep · Bay Farm Shopper</div>
     <div class="meta" id="meta">Loading…</div>
   </div>
   <nav id="nav"></nav>
@@ -98,7 +102,7 @@ function lockFor(msg) {
   return false;
 }
 function showErr(msg) { $('#app').insertAdjacentHTML('afterbegin', '<div class="err">⚠️ ' + esc(msg) + '</div>'); }
-var PAGES = [['plan','Trip Planner'],['receipts','After Shopping'],['prices','Prices'],['stores','Stores'],['cookday','Cook Day'],['recipes','Recipes'],['history','History'],['week','The Week'],['storage','Storage & Swaps'],['settings','Settings']];
+var PAGES = [['plan','Trip Planner'],['newweek','New Week'],['week','The Week'],['receipts','After Shopping'],['prices','Prices'],['stores','Stores'],['recipes','Recipes'],['cookday','Cook Day'],['history','History'],['storage','Storage & Swaps'],['settings','Settings']];
 var $ = function (s) { return document.querySelector(s); };
 var fmt = function (n) { return n == null || isNaN(n) ? '—' : '$' + Number(n).toFixed(2); };
 var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); };
@@ -114,7 +118,7 @@ function call(fn, args, ok) {
     if (!res.ok) throw new Error(res.error || 'Something went wrong');
     ok(res.data);
   }).catch(function (e) {
-    BUSY = {}; rcReset();
+    BUSY = {}; rcReset(); if (NW) { NW.loading = false; NW.importing = ''; NW.saving = false; }
     if (lockFor(e.message)) return;
     render(); showErr(e.message || e);
   });
@@ -147,8 +151,8 @@ function render() {
   $('#nav').innerHTML = PAGES.map(function (p) { return '<button class="' + (PAGE === p[0] ? 'on' : '') + '" data-page="' + p[0] + '">' + p[1] + '</button>'; }).join('');
   if (!D) return;
   $('#meta').innerHTML = '📍 Starting from ' + esc(startLabel()) + ' · Prices checked: ' + (D.lastRefresh ? esc(D.lastRefresh) : 'not yet');
-  $('#foot').innerHTML = 'Adapted for personal use from <a href="' + D.sourceUrl + '" target="_blank">Tim Laielli\'s meal plan</a>. Live prices come from store websites when reachable; anything marked <b>estimate</b> is a typical East Bay price. Drive times from Google Maps. <a href="' + D.sheetUrl + '" target="_blank">Open data sheet ↗</a>';
-  var f = { plan: pPlan, receipts: pReceipts, prices: pPrices, stores: pStores, cookday: pCook, recipes: pRecipes, history: pHistory, week: pWeek, storage: pStorage, settings: pSettings }[PAGE] || pPlan;
+  $('#foot').innerHTML = 'Recipes adapted for personal use from <a href="' + D.sourceUrl + '" target="_blank">the bare minimum</a> by Tim Laielli. Live prices come from store websites when reachable; anything marked <b>estimate</b> is a typical East Bay price. Drive times from Google Maps. <a href="' + D.sheetUrl + '" target="_blank">Open data sheet ↗</a>';
+  var f = { plan: pPlan, newweek: pNewWeek, receipts: pReceipts, prices: pPrices, stores: pStores, cookday: pCook, recipes: pRecipes, history: pHistory, week: pWeek, storage: pStorage, settings: pSettings }[PAGE] || pPlan;
   $('#app').innerHTML = f();
 }
 
@@ -156,14 +160,16 @@ function render() {
 function pPlan() {
   var s = D.settings, en = String(s.enabledStores).split(',');
   var h = '<h1>Trip planner</h1><p class="muted">Finds the store combination and driving order with the lowest <b>groceries + gas + your time</b>.</p>';
-  var act = D.recipes.filter(function (r) { return r.active; });
-  h += '<div class="note" style="background:var(--green-soft);border-color:var(--green)">🍲 Shopping for <b>' + act.length + ' of ' + D.recipes.length + ' recipes</b> (' + act.reduce(function (a, r) { return a + (r.servings || 0); }, 0) + ' servings) · ' +
+  var act = D.recipes.filter(function (r) { return r.active; }), por = D.portions || {}, planned = Object.keys(por).length;
+  h += '<div class="note" style="background:var(--green-soft);border-color:var(--green)">🍲 Shopping for <b>' + act.length + ' recipe' + (act.length === 1 ? '' : 's') + '</b>' +
+    (planned ? ' · ' + Object.keys(por).reduce(function (a, k) { return a + por[k].portions; }, 0) + ' portions on your week plan' : '') + ' · ' +
     (PLAN ? '<b>' + PLAN.itemCount + ' items</b> to buy' + (PLAN.alreadyHave.length ? ', ' + PLAN.alreadyHave.length + ' already bought' : '') : '…') +
-    ' · <a href="#" data-page="recipes">Change recipes</a></div>';
+    ' · <a href="#" data-page="newweek">Plan a new week</a></div>';
+  if (PLAN && PLAN.storeNote) h += '<div class="note">' + esc(PLAN.storeNote) + '</div>';
   h += '<div class="card"><label class="small muted" style="display:block;margin-bottom:4px">Starting from — the trip ends back at home</label>' +
     '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><input type="text" id="f_start" style="flex:1;min-width:220px" value="' + esc(startVal()) + '" placeholder="Address, place or intersection">' +
     '<button class="btn ghost" id="startHome">🏠 Home</button><button class="btn ghost" id="startHere">📍 Use my location</button></div>' +
-    (START ? '<div class="small muted" style="margin:-6px 0 10px">Planning from ' + esc(startLabel()) + ' instead of home. First time from a new spot takes ~10 seconds to look up drive times.</div>' : '') +
+    '<div class="small muted" style="margin:-6px 0 10px">' + (START ? 'Planning from ' + esc(startLabel()) + ' instead of home. ' : '') + 'Each store chain uses its location nearest to where you start. The first plan from a new area takes up to a minute to look up nearby stores and drive times.</div>' +
     '<div class="form">' +
     inp('mpg', 'Car MPG (city)', s.mpg) + inp('gasPrice', 'Gas $/gal', s.gasPrice, 0.01) + inp('timeValue', 'Your time ($/hr)', s.timeValue) +
     inp('stopMinutes', 'Minutes per stop', s.stopMinutes) + inp('maxStores', 'Max stops', s.maxStores) +
@@ -172,7 +178,7 @@ function pPlan() {
       var on = en.indexOf(st.id) >= 0;
       return '<label class="tog ' + (on ? 'on' : '') + '"><input type="checkbox" data-store="' + st.id + '"' + (on ? ' checked' : '') + '> ' + esc(st.short) + '</label>';
     }).join('') + '<label class="tog ' + (isTrue(s.costcoMember) ? 'on' : '') + '"><input type="checkbox" id="f_costcoMember"' + (isTrue(s.costcoMember) ? ' checked' : '') + '> I have Costco</label></div>' +
-    '<button class="btn" id="go"' + (BUSY.plan ? ' disabled' : '') + '>' + (BUSY.plan ? '<span class="spinner"></span>Optimizing…' : 'Find best trip') + '</button> ' +
+    '<button class="btn" id="go"' + (BUSY.plan ? ' disabled' : '') + '>' + (BUSY.plan ? '<span class="spinner"></span>Finding stores & optimizing…' : 'Find best trip') + '</button> ' +
     '<button class="btn ghost" id="saveDefaults">Save as my defaults</button></div>';
 
   if (!PLAN) return h + '<div class="card muted">Calculating…</div>';
@@ -191,6 +197,8 @@ function pPlan() {
     stat(fmt(pl.groceries), 'groceries') + stat(fmt(pl.fuel), 'gas · ' + pl.miles + ' mi round trip') +
     stat(pl.driveMin + ' + ' + pl.stopMin + ' min', 'driving + in-store stops') + stat(fmt(pl.total), 'true cost incl. your time') + '</div>';
   if (pl.missing.length) h += '<div class="note">Not available on this route: ' + esc(pl.missing.join(', ')) + '</div>';
+  var unp = 0; pl.stores.forEach(function (x) { x.items.forEach(function (i) { if (i.source === 'unpriced') unp++; }); });
+  if (unp) h += '<div class="note">' + unp + ' item' + (unp === 1 ? ' has' : 's have') + ' no price yet (new this week), so ' + (unp === 1 ? 'it\'s' : 'they\'re') + ' placed at a stop you\'re already making and not counted in the totals. ' + (D.hasSerpKey ? 'Press <b>Check prices now</b> on the <a href="#" data-page="prices">Prices</a> page' : 'Add a SerpApi key in <a href="#" data-page="settings">Settings</a>, or upload your receipt after shopping') + ' to fill them in.</div>';
 
   h += '<div class="card"><div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px"><h3 style="margin:0">Route</h3><a class="btn" style="text-decoration:none" href="' + pl.mapsUrl + '" target="_blank">Open in Google Maps ↗</a></div>';
   if (isBest && PLAN.routeMap) {
@@ -203,11 +211,11 @@ function pPlan() {
 
   h += '<div class="card">' + pl.stores.map(function (x, i) {
     return '<div class="stop"><div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px"><h3 style="margin:0"><span class="num-badge">' + (i + 1) + '</span>' + esc(x.name) + '</h3><span class="pill acc">' + x.items.length + ' items · ' + fmt(x.subtotal) + '</span></div>' +
-      '<div class="small muted" style="margin:2px 0 8px 30px">' + esc(x.address) + (x.bulk ? ' · bulk packs' : '') + '</div>' +
+      '<div class="small muted" style="margin:2px 0 8px 30px">' + esc(storeLabel(x.id, x.address)) + (x.bulk ? ' · bulk packs' : '') + '</div>' +
       x.items.map(function (it) {
         var c = itemById(it.id).have, n = (D.need || {})[it.id], base = Number(itemById(it.id).units) || 1;
         return '<label class="chk ' + (c ? 'done' : '') + '"><input type="checkbox" data-buy="' + x.id + '|' + it.id + '|' + it.price + '"' + (c ? ' checked' : '') + '><span><b>' + esc(it.name) + '</b> — ' + esc(it.qty) + (n && n !== base ? ' <span class="pill acc">buy ' + n + ' (usually ' + base + ')</span>' : '') +
-          ' <span class="muted">· ' + fmt(it.price) + '</span> ' + srcPill(it.source, it.updated) + (it.matched ? ' <span class="small muted">' + esc(it.matched) + '</span>' : '') + '</span></label>';
+          ' <span class="muted">· ' + (it.source === 'unpriced' ? 'price not checked yet' : fmt(it.price)) + '</span> ' + (it.source === 'unpriced' ? '' : srcPill(it.source, it.updated)) + (it.matched ? ' <span class="small muted">' + esc(it.matched) + '</span>' : '') + '</span></label>';
       }).join('') + '</div>';
   }).join('') + '</div>';
 
@@ -224,6 +232,8 @@ function pPlan() {
     '<p style="margin:10px 0 0"><button class="btn ghost" id="newWeek">' + (BUSY.confirmWeek ? 'Tap again to clear all bought items' : '🗓 Start a new week') + '</button> <span class="small muted">Clears "bought" so everything is back on the list. Your purchase history is kept.</span></p></div>';
   return h;
 }
+function planStore(id) { return PLAN && PLAN.stores ? PLAN.stores.filter(function (s) { return s.id === id; })[0] : null; }
+function storeLabel(id, fallback) { var s = planStore(id); return (s && s.label) || fallback || ''; }
 function itemById(id) { return D.items.filter(function (i) { return i.id === id; })[0] || { id: id, name: id, units: 1 }; }
 function inp(k, l, v, step) { return '<label>' + l + '<input type="number" id="f_' + k + '" value="' + esc(v) + '" step="' + (step || 1) + '"></label>'; }
 function stat(b, s) { return '<div class="stat"><b>' + b + '</b><span>' + s + '</span></div>'; }
@@ -243,11 +253,15 @@ function pPrices() {
   D.items.forEach(function (it) { ids.forEach(function (sid) { var e = (D.prices[it.id] || {})[sid]; if (e && e.price != null) { total++; if (String(e.source).indexOf('live') === 0) live++; } }); });
   var h = '<h1>Prices</h1><p class="muted">Cost of the amount each recipe needs. <span class="pill live">live</span> = checked online · <span class="pill est">estimate</span> = typical price, not yet confirmed. Green = cheapest.</p>' +
     '<div class="card"><button class="btn" id="refresh"' + (BUSY.refresh ? ' disabled' : '') + '>' + (BUSY.refresh ? '<span class="spinner"></span>Checking stores… (1–4 min)' : 'Check prices now') + '</button> ' +
-    '<span class="small muted">' + live + ' of ' + total + ' prices live · last check ' + esc(D.lastRefresh || 'never') + (D.triggerOn ? ' · auto-checks daily 6am' : '') + '</span>' +
+    '<span class="small muted">' + live + ' of ' + total + ' prices live · last check ' + esc(D.lastRefresh || 'never') + (D.triggerOn ? ' · auto-checks daily 6am' : '') +
+    (D.hasSerpKey && D.serpUsage ? ' · SerpApi: ' + D.serpUsage.n + ' of ' + D.serpUsage.limit + ' searches used this month' : '') + '</span>' +
     (BUSY.refreshResult ? '<div class="note">' + BUSY.refreshResult + '</div>' : '') +
-    (!D.hasSerpKey ? '<div class="note">Safeway, Lucky and Raley\'s only update if you add a SerpApi key in <b>Settings</b>. Grocery Outlet and Costco don\'t post prices online, so edit those in the <a href="' + D.sheetUrl + '" target="_blank">sheet</a> (set Lock = TRUE to keep your number).</div>' : '') + '</div>';
+    (!D.hasSerpKey ? '<div class="note">Live prices need a SerpApi key (free) — add it in <b>Settings</b>. Trader Joe\'s and Target block automatic checks from Google\'s servers, and Grocery Outlet and Costco don\'t post prices, so those stay current from your receipts on <a href="#" data-page="receipts">After Shopping</a>.</div>' :
+      '<div class="small muted" style="margin-top:8px">Checks only this week\'s items, one search per item (all stores at once). Items checked in the last 2 days are skipped. Trader Joe\'s, Grocery Outlet and Costco prices come from your receipts.</div>') + '</div>';
   h += '<div class="tw"><table><thead><tr><th>Item</th><th>Qty</th>' + D.stores.map(function (s) { return '<th class="num">' + esc(s.short) + '</th>'; }).join('') + '</tr></thead><tbody>';
-  ['Produce','Meat','Dairy & Eggs','Pantry'].forEach(function (cat) {
+  var cats = ['Produce','Meat','Dairy & Eggs','Frozen','Bakery','Pantry'];
+  D.items.forEach(function (i) { if (cats.indexOf(i.cat) < 0) cats.push(i.cat); });
+  cats.filter(function (cat) { return D.items.some(function (i) { return i.cat === cat && (D.need || {})[i.id]; }); }).forEach(function (cat) {
     h += '<tr><td colspan="' + (2 + ids.length) + '" style="background:#f6f0e7;font-weight:700">' + cat + '</td></tr>';
     D.items.filter(function (i) { return i.cat === cat && (D.need || {})[i.id]; }).forEach(function (it) {
       var row = D.prices[it.id] || {};
@@ -267,11 +281,16 @@ function pPrices() {
 
 /* ---------------- Stores ---------------- */
 function pStores() {
-  var m = PLAN && PLAN.best ? '' : '';
-  return '<h1>Stores</h1><div class="tw" style="max-height:none"><table><thead><tr><th>Store</th><th>Address</th><th>Hours</th><th>Prices from</th><th>Links</th></tr></thead><tbody>' +
+  var near = isTrue(D.settings.nearestStores) || D.settings.nearestStores === '' || D.settings.nearestStores == null;
+  var h = '<h1>Stores</h1><p class="muted">' + (near ? 'Each chain uses its location nearest to <b>' + esc(startLabel()) + '</b> (fastest drive among the closest few). Change where you start on the Trip Planner.' : 'Using the store addresses saved in your sheet (nearest-store lookup is off in Settings).') + '</p>';
+  if (!PLAN) h += '<div class="card muted">Finding the stores near you… open the Trip Planner first if this doesn\'t fill in.</div>';
+  return h + '<div class="tw" style="max-height:none"><table><thead><tr><th>Store</th><th>Location used</th><th class="num">From start</th><th>Prices from</th><th>Links</th></tr></thead><tbody>' +
     D.stores.map(function (s) {
-      var src = { traderjoes: 'traderjoes.com (auto)', target: 'target.com, Alameda store (auto)', serpapi: D.hasSerpKey ? 'Google Shopping (auto)' : 'Google Shopping — needs key', manual: 'You (sheet)' }[s.source] || s.source;
-      return '<tr><td><b>' + esc(s.name) + '</b>' + (s.bulk ? ' <span class="pill acc">membership</span>' : '') + '</td><td class="small">' + esc(s.address) + '</td><td class="small">' + esc(s.hours) + '</td><td class="small">' + src + '</td><td class="small"><a href="' + s.ad + '" target="_blank">Weekly ad ↗</a> · <a href="https://www.google.com/maps/dir/?api=1&origin=' + encodeURIComponent(startVal()) + '&destination=' + encodeURIComponent(s.address) + '" target="_blank">Directions ↗</a></td></tr>';
+      var ps = planStore(s.id), addr = ps ? ps.address : s.address;
+      var src = { traderjoes: 'Your receipts (traderjoes.com blocks auto checks)', target: D.hasSerpKey ? 'Google Shopping via SerpApi' : 'Needs SerpApi key', serpapi: D.hasSerpKey ? 'Google Shopping via SerpApi' : 'Needs SerpApi key', manual: 'Your receipts / sheet' }[s.source] || s.source;
+      return '<tr><td><b>' + esc(ps ? ps.name : s.name) + '</b>' + (s.bulk ? ' <span class="pill acc">membership</span>' : '') + '</td><td class="small">' + esc(ps ? ps.label : s.address) + (ps && !ps.home ? ' <span class="pill live">nearest</span>' : '') + '</td>' +
+        '<td class="num small">' + (ps && ps.fromStart ? ps.fromStart.minutes + ' min · ' + ps.fromStart.miles + ' mi' : '—') + '</td><td class="small">' + src + '</td>' +
+        '<td class="small"><a href="' + s.ad + '" target="_blank">Weekly ad ↗</a> · <a href="https://www.google.com/maps/dir/?api=1&origin=' + encodeURIComponent(startVal()) + '&destination=' + encodeURIComponent(addr) + '" target="_blank">Directions ↗</a></td></tr>';
     }).join('') + '</tbody></table></div>' +
     '<div class="note">Thanksgiving is Thu Nov 26 — most stores close early or all day. Shop the weekend before.</div>';
 }
@@ -376,7 +395,14 @@ function pHistory() {
 function originalPlan() { var ids = ['pancake-bake','yogurt-jars','farro-bowl','cider-chicken','rigatoni']; return D.recipes.filter(function (r) { return r.active; }).map(function (r) { return r.id; }).sort().join() === ids.slice().sort().join(); }
 function changedNote() { return originalPlan() ? '' : '<div class="note">This schedule was written for the original 5 recipes. You\'ve changed your recipes, so adjust it to fit.</div>'; }
 function pWeek() {
-  return '<h1>The week</h1>' + changedNote() + '<div class="tw" style="max-height:none"><table><thead><tr><th>Day</th><th>Breakfast</th><th>Lunch</th><th>Dinner</th></tr></thead><tbody>' +
+  var pd = (D.plan && D.plan.days) || [];
+  if (pd.some(function (d) { return d.breakfast || d.lunch || d.dinner || d.snack; })) {
+    var nm = function (id) { var r = recipeOf(id); return r ? esc(shortTitle(r)) : (id ? '<span class="muted">' + esc(id) + '</span>' : '<span class="muted">—</span>'); };
+    return '<h1>The week</h1><p class="muted">Feeding ' + esc(D.plan.household) + ' most days. <a href="#" data-page="newweek">Change the plan</a></p><div class="tw" style="max-height:none"><table><thead><tr><th>Day</th><th class="num">People</th><th>Breakfast</th><th>Lunch</th><th>Dinner</th><th>Snack</th></tr></thead><tbody>' +
+      pd.map(function (d) { return '<tr><td><b>' + esc(d.day) + '</b></td><td class="num"' + (Number(d.people) !== Number(D.plan.household) ? ' style="color:var(--accent);font-weight:700"' : '') + '>' + d.people + '</td><td>' + nm(d.breakfast) + '</td><td>' + nm(d.lunch) + '</td><td>' + nm(d.dinner) + '</td><td>' + nm(d.snack) + '</td></tr>'; }).join('') +
+      '</tbody></table></div>';
+  }
+  return '<h1>The week</h1><div class="note">No week plan yet. <a href="#" data-page="newweek">Plan a new week</a> to choose recipes and how many people eat each day. Below is the original Thanksgiving-week schedule.</div>' + changedNote() + '<div class="tw" style="max-height:none"><table><thead><tr><th>Day</th><th>Breakfast</th><th>Lunch</th><th>Dinner</th></tr></thead><tbody>' +
     D.week.map(function (w) { return '<tr><td><b>' + w[0] + '</b></td><td>' + w[1] + '</td><td>' + w[2] + '</td><td>' + w[3] + '</td></tr>'; }).join('') + '</tbody></table></div>' +
     '<div class="card small"><b>With a little one:</b> let them build their own sliders and yogurt jars, serve farro-bowl parts separately, and call the rigatoni "orange sauce pasta."</div>';
 }
@@ -507,17 +533,145 @@ function pSettings() {
   var s = D.settings;
   return '<h1>Settings</h1><div class="card"><div class="form">' +
     '<label style="grid-column:1/-1">Home address (start and end of every trip)<input type="text" id="s_home" value="' + esc(s.homeAddress) + '"></label>' +
-    '<label>Trader Joe\'s store code (optional)<input type="text" id="s_tj" value="' + esc(s.traderJoesStoreCode) + '"></label>' +
-    '<label>Target store ID<input type="text" id="s_tgt" value="' + esc(s.targetStoreId) + '"></label>' +
-    '<label>SerpApi key ' + (D.hasSerpKey ? '(saved ✓)' : '(optional)') + '<input type="password" id="s_serp" placeholder="' + (D.hasSerpKey ? '•••••• leave blank to keep' : 'paste key') + '"></label>' +
-    '</div><p><button class="btn" id="saveSettings">Save</button></p>' +
-    '<p class="small muted">Changing your address rebuilds drive times on the next plan (takes ~20 sec). The SerpApi key is stored in the script\'s private properties, not in the sheet. It adds Safeway, Lucky and Raley\'s prices via Google Shopping (online prices, can differ from shelf).</p></div>' +
+    '<label>Usually feeding (people)<input type="number" id="s_hh" min="1" max="20" value="' + esc(s.householdSize || 3) + '"></label>' +
+    '<label>Which store locations<select id="s_near"><option value="true"' + (s.nearestStores === false || String(s.nearestStores).toUpperCase() === 'FALSE' ? '' : ' selected') + '>Nearest to where I start</option><option value="false"' + (s.nearestStores === false || String(s.nearestStores).toUpperCase() === 'FALSE' ? ' selected' : '') + '>Always the ones in my sheet</option></select></label>' +
+    '</div><p><button class="btn" id="saveSettings">Save</button></p></div>' +
+    '<div class="card"><h3>Live prices (SerpApi)</h3><p class="small" style="margin:0 0 8px">' + (D.hasSerpKey ? '✅ A key is saved' + (D.serpUsage ? ' · ' + D.serpUsage.n + ' of ' + D.serpUsage.limit + ' searches used this month' : '') + '.' : 'No key saved yet.') + '</p>' +
+    '<ol class="small" style="margin:0 0 10px;padding-left:18px"><li>Sign up free at <a href="https://serpapi.com/users/sign_up" target="_blank">serpapi.com</a> and confirm your email (and phone, if asked).</li><li>Open <a href="https://serpapi.com/manage-api-key" target="_blank">Your API Key</a> and copy the long key (64 letters and numbers).</li><li>Paste it here and press <b>Save & test key</b>.</li></ol>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap"><input type="password" id="s_serp" style="flex:1;min-width:220px" placeholder="' + (D.hasSerpKey ? '•••••• saved — paste a new one to replace' : 'Paste your SerpApi key') + '" autocomplete="off">' +
+    '<button class="btn" id="serptest"' + (BUSY.serp ? ' disabled' : '') + '>' + (BUSY.serp ? '<span class="spinner"></span>Testing…' : (D.hasSerpKey ? 'Save & test' : 'Save & test key')) + '</button></div>' +
+    (BUSY.serpResult ? BUSY.serpResult : '') +
+    '<label class="small muted" style="display:block;margin-top:10px">Monthly search cap <input type="number" id="s_serplim" min="0" value="' + esc(s.serpMonthlyLimit || 230) + '" style="width:80px"> <span>(free plan = 250/month; each price check uses 1 per item on this week\'s list)</span></label></div>' +
     '<div class="card"><h3>Automatic price checks</h3><p class="small">' + (D.triggerOn ? '✅ Prices are re-checked every morning around 6am.' : 'Off — prices only update when you press "Check prices now".') + '</p>' +
     '<button class="btn ghost" id="trigger">' + (D.triggerOn ? 'Turn off daily check' : 'Turn on daily check') + '</button> <button class="btn ghost" id="rebuild">Rebuild drive times</button></div>' +
     '<div class="card"><h3>Household passcode</h3><div class="form"><label>New passcode<input type="password" id="np1"></label><label>Type it again<input type="password" id="np2"></label></div>' +
     '<p><button class="btn ghost" id="npsave">Change passcode</button> <button class="btn ghost" id="lockdev">🔒 Lock this device</button></p>' +
     '<p class="small muted">Share the passcode with your household. "Lock this device" makes this phone or computer ask for it again.</p></div>' +
     '<div class="card small">All data (stores, items, search phrases, prices) lives in your <a href="' + D.sheetUrl + '" target="_blank">Google Sheet</a> — edit it there to add stores or fix matches.</div>';
+}
+
+/* ---------------- New week: pick recipes, people per day, plan ---------------- */
+var DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'], SLOTS = ['breakfast','lunch','dinner','snack'];
+var NW = null;
+function recipeOf(id) { return D.recipes.filter(function (r) { return r.id === id; })[0]; }
+function shortTitle(r) { return r ? String(r.title).replace(/\s*\(.*?\)\s*/g, ' ').replace(/\s+with .*$/i, '').trim() : ''; }
+function weekOf(r) { var m = String(r.id).match(/^bm(\d\d)(\d\d)-/); return m ? ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+m[1]] + ' ' + (+m[2]) + ' week' : (r.custom ? 'yours' : 'Thanksgiving week'); }
+function mealKind(r) { var w = String(r.when || '').toLowerCase(); return /breakfast/.test(w) ? 'breakfast' : /snack|dessert|treat/.test(w) ? 'snack' : 'main'; }
+function nwInit() {
+  var p = D.plan || { days: [] }, sel = {};
+  var onPlan = {}; (p.days || []).forEach(function (d) { SLOTS.forEach(function (s) { if (d[s]) onPlan[d[s]] = 1; }); });
+  D.recipes.forEach(function (r) { if (r.active || onPlan[r.id]) sel[r.id] = true; });
+  var hh = Number(p.household || D.settings.householdSize) || 3;
+  NW = { posts: null, loading: false, importing: '', msg: '', err: '', sel: sel, household: hh, days: null, saving: false };
+  NW.days = (p.days && p.days.length) ? p.days.map(function (d) { return { day: d.day, people: d.people, breakfast: d.breakfast, lunch: d.lunch, dinner: d.dinner, snack: d.snack }; }) : autoFill(selRecipes(), hh);
+}
+function selRecipes() { return D.recipes.filter(function (r) { return NW.sel[r.id]; }); }
+/** Monday–Friday, like the meal plans: breakfasts, snacks, then mains across dinners and lunches (≈ servings ÷ people meals each). */
+function autoFill(recipes, household) {
+  household = Math.max(1, Number(household) || 1);
+  var all = DAYS.map(function (d) { return { day: d, people: household, breakfast: '', lunch: '', dinner: '', snack: '' }; });
+  var grid = all.slice(0, 5);
+  var g = { breakfast: [], snack: [], main: [] };
+  recipes.forEach(function (r) { g[mealKind(r)].push(r); });
+  ['breakfast','snack'].forEach(function (k) { if (g[k].length) grid.forEach(function (d, i) { d[k] = g[k][i % g[k].length].id; }); });
+  var q = g.main.map(function (r) { return { id: r.id, left: Math.max(1, Math.round((Number(r.servings) || household) / household)) }; });
+  var slots = grid.map(function (d) { return [d, 'dinner']; }).concat(grid.map(function (d) { return [d, 'lunch']; })), qi = 0;
+  slots.forEach(function (sl) {
+    for (var t = 0; t < q.length; t++) { var x = q[qi % q.length]; qi++; if (x.left > 0) { sl[0][sl[1]] = x.id; x.left--; return; } }
+  });
+  return all;
+}
+function nwPortions() {
+  var out = {};
+  NW.days.forEach(function (d) { SLOTS.forEach(function (s) { if (d[s]) out[d[s]] = (out[d[s]] || 0) + (Number(d.people) || 0); }); });
+  return out;
+}
+function similar() {
+  var pool = {}, sel = selRecipes();
+  sel.forEach(function (r) { Object.keys(r.items).forEach(function (i) { pool[i] = 1; }); });
+  D.items.forEach(function (i) { if (i.have) pool[i.id] = 1; });
+  return D.recipes.filter(function (r) { return !NW.sel[r.id] && Object.keys(r.items).length; }).map(function (r) {
+    var ids = Object.keys(r.items), shared = ids.filter(function (i) { return pool[i]; });
+    return { r: r, shared: shared, score: shared.length / ids.length + shared.length * 0.02 };
+  }).sort(function (a, b) { return b.score - a.score; });
+}
+function pNewWeek() {
+  if (!NW) nwInit();
+  var h = '<h1>Plan a new week</h1><p class="muted">Pick this week\'s recipes, say how many people are eating each day, and the shopping list and trip plan rebuild to match.</p>';
+  if (NW.err) h += '<div class="err">⚠️ ' + esc(NW.err) + '</div>';
+  if (NW.msg) h += '<div class="ok">' + NW.msg + '</div>';
+
+  // 1. newest from the bare minimum
+  h += '<div class="card"><h3 style="margin:0 0 4px">1. Newest weeks from <i>the bare minimum</i></h3>';
+  if (!NW.posts) h += '<p class="small muted" style="margin:4px 0 10px">Tim posts a new week of meals with a shopping list most Fridays.</p><button class="btn" id="nwload"' + (NW.loading ? ' disabled' : '') + '>' + (NW.loading ? '<span class="spinner"></span>Checking for new weeks…' : 'Check for the newest weeks') + '</button>';
+  else h += NW.posts.slice(0, 8).map(function (p) {
+    var busy = NW.importing === p.slug, imp = p.imported;
+    return '<div class="post"><div><b>' + esc(p.title.replace(/^A Full Week of Meals \+ A Shopping List:?\s*/i, 'Week of ')) + '</b> <span class="small muted">' + esc(p.date) + '</span> ' +
+      (p.free ? '' : '<span class="pill">subscribers only</span> ') + (imp ? '<span class="pill live">in your recipes</span>' : '') +
+      '<div class="small muted">' + esc(p.subtitle) + '</div></div><div style="white-space:nowrap">' +
+      (p.free ? '<button class="btn" data-nwuse="' + p.slug + '"' + (NW.importing ? ' disabled' : '') + '>' + (busy ? '<span class="spinner"></span>Bringing in…' : 'Use this week') + '</button> ' +
+                (imp ? '' : '<button class="btn ghost" data-nwadd="' + p.slug + '"' + (NW.importing ? ' disabled' : '') + '>Add as options</button>')
+              : '<a class="small" href="' + esc(p.url) + '" target="_blank">Read it ↗</a>') + '</div></div>';
+  }).join('') + '<p class="small muted" style="margin:8px 0 0">"Use this week" brings in all 5 recipes and its shopping list and selects them. "Add as options" adds them to your library so you can mix and match below. Subscriber-only weeks can\'t be read automatically.</p>';
+  h += '</div>';
+
+  // 2. recipes
+  var sel = selRecipes(), sim = similar();
+  h += '<div class="card"><h3 style="margin:0 0 6px">2. This week\'s recipes <span class="small muted" style="font-weight:400">(' + sel.length + ' picked — tap to remove)</span></h3>' +
+    (sel.length ? sel.map(function (r) { return '<button class="chip on" data-nwsel="' + r.id + '">✓ <span><b>' + esc(shortTitle(r)) + '</b><br><span class="small muted">' + esc(r.when || '') + ' · makes ' + (r.servings || '?') + ' · ' + esc(weekOf(r)) + '</span></span></button>'; }).join('') : '<p class="small muted">Nothing picked yet.</p>') +
+    '<h3 style="margin:14px 0 4px">Similar options <span class="small muted" style="font-weight:400">— most ingredients in common with what you picked or already bought</span></h3>' +
+    (sim.length ? sim.slice(0, 10).map(function (x) {
+      return '<button class="chip" data-nwsel="' + x.r.id + '">+ <span><b>' + esc(shortTitle(x.r)) + '</b><br><span class="small muted">' + esc(x.r.when || '') + ' · ' + esc(weekOf(x.r)) + ' · shares ' + x.shared.length + ' of ' + Object.keys(x.r.items).length + ' ingredients' +
+        (x.shared.length ? ': ' + esc(x.shared.slice(0, 4).map(function (i) { return itemById(i).name.toLowerCase(); }).join(', ')) + (x.shared.length > 4 ? '…' : '') : '') + '</span></span></button>';
+    }).join('') : '<p class="small muted">Add more weeks above to get options.</p>') + '</div>';
+
+  // 3. people + grid
+  var por = nwPortions();
+  var opt = function (slot, cur) {
+    var list = sel.slice().sort(function (a, b) { var ka = mealKind(a), kb = mealKind(b), want = slot === 'breakfast' ? 'breakfast' : slot === 'snack' ? 'snack' : 'main'; return (kb === want) - (ka === want); });
+    return '<option value="">—</option>' + list.map(function (r) { return '<option value="' + r.id + '"' + (r.id === cur ? ' selected' : '') + '>' + esc(shortTitle(r)) + '</option>'; }).join('') +
+      (cur && !NW.sel[cur] && recipeOf(cur) ? '<option value="' + cur + '" selected>' + esc(shortTitle(recipeOf(cur))) + '</option>' : '');
+  };
+  h += '<div class="card"><h3 style="margin:0 0 6px">3. Who\'s eating, and when</h3><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">' +
+    '<label class="small">Usually feeding <input type="number" id="nwhh" min="1" max="20" value="' + NW.household + '" style="width:64px"> people</label>' +
+    '<button class="btn ghost" id="nwfill">✨ Fill in the week for me</button><button class="btn ghost" id="nwclear">Clear</button></div>' +
+    '<div class="tw" style="max-height:none"><table class="wk"><thead><tr><th>Day</th><th>People</th><th>Breakfast</th><th>Lunch</th><th>Dinner</th><th>Snack</th></tr></thead><tbody>' +
+    NW.days.map(function (d, i) {
+      var diff = Number(d.people) !== Number(NW.household);
+      return '<tr><td><b>' + esc(d.day.slice(0, 3)) + '</b></td><td><span class="ppl"><button data-nwppl="' + i + '|-1">−</button><b style="min-width:18px;text-align:center' + (diff ? ';color:var(--accent)' : '') + '">' + d.people + '</b><button data-nwppl="' + i + '|1">+</button></span></td>' +
+        SLOTS.map(function (s) { return '<td><select data-nwslot="' + i + '|' + s + '">' + opt(s, d[s]) + '</select></td>'; }).join('') + '</tr>';
+    }).join('') + '</tbody></table></div>' +
+    '<p class="small muted" style="margin:6px 0 0">"Fill in" covers Monday–Friday like the meal plans; add weekend meals if you want. Tap − / + to feed more or fewer people on a given day (guests, a night out). Set a meal to — if you\'re eating out.</p>';
+  var rows = sel.map(function (r) {
+    var n = por[r.id] || 0, k = r.servings ? n / r.servings : 0;
+    return '<tr><td>' + esc(shortTitle(r)) + '</td><td class="num">' + n + '</td><td class="num">' + (r.servings || '?') + '</td><td class="num"><b>' + (n ? (k ? (Math.round(k * 100) / 100) + '×' : '1×') : '1× (not on a day)') + '</b></td></tr>';
+  }).join('');
+  if (rows) h += '<h3 style="margin:14px 0 4px">How much to make</h3><table><thead><tr><th>Recipe</th><th class="num">Portions planned</th><th class="num">Recipe makes</th><th class="num">Make</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+    '<p class="small muted">The shopping list is scaled the same way (rounded to whole packages).</p>';
+  h += '</div>';
+
+  h += '<div class="card"><h3 style="margin:0 0 6px">4. Ready?</h3><p class="small muted" style="margin:0 0 10px"><b>Start this week</b> saves the plan and clears last week\'s "bought" checkmarks (your purchase history is kept). <b>Save plan</b> keeps them.</p>' +
+    '<button class="btn" id="nwstart"' + (NW.saving ? ' disabled' : '') + '>' + (NW.saving ? '<span class="spinner"></span>Saving…' : '🛒 Start this week & build my trip') + '</button> <button class="btn ghost" id="nwsave"' + (NW.saving ? ' disabled' : '') + '>Save plan</button></div>';
+  return h;
+}
+function nwPayload(startNew) {
+  return { household: NW.household, days: NW.days, selected: Object.keys(NW.sel), startNewWeek: !!startNew, pantry: NW.pantry, sourceUrl: NW.sourceUrl };
+}
+function nwImport(slug, use) {
+  NW.importing = slug; NW.err = ''; NW.msg = ''; render();
+  call('importBareMinimum', [{ slug: slug }], function (d) {
+    var imp = d.imported; delete d.imported;
+    D = d; NW.importing = '';
+    (NW.posts || []).forEach(function (p) { if (p.slug === slug) p.imported = { recipeIds: imp.recipeIds }; });
+    if (use) {
+      NW.sel = {}; imp.recipeIds.forEach(function (id) { NW.sel[id] = true; });
+      NW.days = autoFill(selRecipes(), NW.household); NW.pantry = imp.pantry; NW.sourceUrl = imp.url;
+    }
+    NW.msg = '✓ Brought in <b>' + esc(imp.title) + '</b>: ' + imp.recipeIds.length + ' recipes, ' + imp.newItems + ' new shopping items' + (imp.reused ? ' (' + imp.reused + ' matched to items you already track)' : '') + '. ' +
+      (use ? 'They\'re picked below and spread over the week — adjust anything, then press Start.' : 'They\'re in the options below.') +
+      (imp.newItems ? ' New items get prices once you check prices (or from your receipts).' : '');
+    render();
+  });
 }
 
 /* ---------------- Events ---------------- */
@@ -541,6 +695,49 @@ document.addEventListener('click', function (e) {
     call('setPasscode', [{ newPass: n1 }], function () { savePass(n1); render(); showErr('✓ Passcode changed. Share the new one with your household.'); });
   }
   else if (t.id === 'lockdev') { savePass(''); LOCK = 'enter'; D = null; PLAN = null; PAGE = 'plan'; render(); }
+  else if (t.id === 'serptest') {
+    var key = ($('#s_serp').value || '').trim();
+    BUSY.serp = true; BUSY.serpResult = ''; render();
+    call('testSerpKey', [{ key: key }], function (r) {
+      BUSY.serp = false;
+      if (r.ok) { D.hasSerpKey = true; BUSY.serpResult = '<div class="ok">✓ Key works and is saved — ' + esc(r.plan) + ' plan' + (r.left != null ? ', ' + esc(r.left) + ' searches left' : '') + '. Prices will be searched near ' + esc(r.location || 'your home city') + '. Go to <a href="#" data-page="prices">Prices</a> and press Check prices now.</div>'; }
+      else BUSY.serpResult = '<div class="err">⚠️ ' + esc(r.error) + (/invalid/i.test(r.error) ? '<br><span class="small">Copy the key again from serpapi.com → Your API Key (it\'s 64 characters; no spaces).</span>' : '') + (r.saved && !key ? '' : '') + '</div>';
+      render();
+    });
+  }
+  else if (t.id === 'nwload') {
+    NW.loading = true; NW.err = ''; render();
+    call('listBareMinimum', [], function (posts) { NW.loading = false; NW.posts = posts; render(); });
+  }
+  else if (t.dataset.nwuse) {
+    var post = (NW.posts || []).filter(function (x) { return x.slug === t.dataset.nwuse; })[0];
+    if (post && post.imported && post.imported.recipeIds) {
+      NW.sel = {}; post.imported.recipeIds.forEach(function (id) { if (recipeOf(id)) NW.sel[id] = true; });
+      NW.days = autoFill(selRecipes(), NW.household); NW.sourceUrl = post.url; NW.msg = '✓ Picked the ' + esc(post.date) + ' week and spread it over the days. Adjust anything, then press Start.'; render();
+    } else nwImport(t.dataset.nwuse, true);
+  }
+  else if (t.dataset.nwadd) nwImport(t.dataset.nwadd, false);
+  else if (t.dataset.nwsel) {
+    var id = t.dataset.nwsel;
+    if (NW.sel[id]) { delete NW.sel[id]; NW.days.forEach(function (d) { SLOTS.forEach(function (s2) { if (d[s2] === id) d[s2] = ''; }); }); }
+    else NW.sel[id] = true;
+    NW.msg = ''; render();
+  }
+  else if (t.dataset.nwppl) {
+    var pp = t.dataset.nwppl.split('|'), dd = NW.days[+pp[0]];
+    dd.people = Math.max(0, Math.min(30, (Number(dd.people) || 0) + Number(pp[1]))); render();
+  }
+  else if (t.id === 'nwfill') { NW.days = autoFill(selRecipes(), NW.household); NW.msg = ''; render(); }
+  else if (t.id === 'nwclear') { NW.days.forEach(function (d) { SLOTS.forEach(function (s2) { d[s2] = ''; }); }); render(); }
+  else if (t.id === 'nwstart' || t.id === 'nwsave') {
+    if (!selRecipes().length) { NW.err = 'Pick at least one recipe.'; render(); return; }
+    var start = t.id === 'nwstart';
+    NW.saving = true; NW.err = ''; render();
+    call('savePlan', [nwPayload(start)], function (d) {
+      D = d; NW = null; PLAN = null;
+      if (start) { PAGE = 'plan'; render(); window.scrollTo(0, 0); runPlan(); } else { render(); showErr('✓ Week plan saved.'); runPlan(); }
+    });
+  }
   else if (t.id === 'rc_noreceipt') { e.preventDefault(); RC.err = ''; rcStart(null); render(); }
   else if (t.id === 'rc_all') { e.preventDefault(); RC.showAll = !RC.showAll; render(); }
   else if (t.id === 'rc_cancel') { RC.step = 'pick'; RC.read = null; RC.err = ''; render(); }
@@ -614,16 +811,18 @@ document.addEventListener('click', function (e) {
   else if (t.id === 'saveDefaults') { var o = overrides(); call('saveSettings', [o], function (d) { D = d; render(); }); }
   else if (t.id === 'refresh') {
     BUSY.refresh = true; BUSY.refreshResult = ''; render();
-    call('refreshPrices', [], function (r) {
-      D.prices = r.prices; D.lastRefresh = r.lastRefresh; BUSY.refresh = false;
-      BUSY.refreshResult = '✓ ' + r.stats.live + ' prices updated live' + (r.stats.failed ? ' · ' + r.stats.failed + ' lookups failed (kept last price — see Refresh Log tab)' : '') + ' · ' + r.stats.skipped + ' locked';
+    call('refreshPrices', [{ manual: true }], function (r) {
+      D.prices = r.prices; D.lastRefresh = r.lastRefresh; D.serpUsage = r.serpUsage; BUSY.refresh = false;
+      BUSY.refreshResult = '✓ ' + r.stats.live + ' prices updated' + (r.stats.searches ? ' using ' + r.stats.searches + ' SerpApi searches' : '') +
+        (r.stats.recent ? ' · ' + r.stats.recent + ' skipped (checked in the last 2 days)' : '') + (r.stats.skipped ? ' · ' + r.stats.skipped + ' locked or from a recent receipt' : '') +
+        (r.stats.budget ? ' · <b>monthly SerpApi limit reached</b>' : '') + (r.stats.failed ? ' · ' + r.stats.failed + ' lookups failed (see the Refresh Log tab)' : '') +
+        (r.location ? '<br><span class="small muted">Searched near ' + esc(r.location) + '</span>' : '');
       render(); runPlan();
     });
   }
   else if (t.id === 'saveSettings') {
-    var o = { homeAddress: $('#s_home').value, traderJoesStoreCode: $('#s_tj').value, targetStoreId: $('#s_tgt').value };
-    if ($('#s_serp').value) o.serpApiKey = $('#s_serp').value;
-    t.disabled = true; call('saveSettings', [o], function (d) { D = d; PLAN = null; render(); runPlan(); });
+    var o = { homeAddress: $('#s_home').value, householdSize: Number($('#s_hh').value) || 3, nearestStores: $('#s_near').value === 'true', serpMonthlyLimit: Number($('#s_serplim').value) || 230 };
+    t.disabled = true; call('saveSettings', [o], function (d) { D = d; PLAN = null; NW = null; render(); runPlan(); });
   }
   else if (t.id === 'trigger') { t.disabled = true; call(D.triggerOn ? 'removeDailyRefresh' : 'installDailyRefresh', [], function () { D.triggerOn = !D.triggerOn; render(); }); }
   else if (t.id === 'rebuild') { t.disabled = true; t.textContent = 'Rebuilding…'; call('rebuildDriveTimes', [], function () { runPlan(); PAGE = 'plan'; }); }
@@ -647,6 +846,12 @@ document.addEventListener('change', function (e) {
     if (ri[1] === 'itemId') render();
   }
   if (t.id === 'hq') { HQ = t.value; render(); }
+  if (t.dataset.nwslot) { var ns = t.dataset.nwslot.split('|'); NW.days[+ns[0]][ns[1]] = t.value; render(); }
+  if (t.id === 'nwhh') {
+    var old = NW.household, nv = Math.max(1, Number(t.value) || 1);
+    NW.days.forEach(function (d) { if (Number(d.people) === Number(old)) d.people = nv; });
+    NW.household = nv; render();
+  }
   if (t.id === 'rc_store') RC.storeId = t.value;
   if (t.id === 'rc_date') RC.date = t.value;
   if (t.dataset.rcline) {
