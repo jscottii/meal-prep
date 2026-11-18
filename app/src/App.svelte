@@ -3,12 +3,13 @@
   import Login from './routes/Login.svelte';
   import Trip from './routes/Trip.svelte';
   import Plan from './routes/Plan.svelte';
+  import Prep from './routes/Prep.svelte';
   import Recipes from './routes/Recipes.svelte';
   import Receipt from './routes/Receipt.svelte';
   import Prices from './routes/Prices.svelte';
   import More from './routes/More.svelte';
 
-  const TABS = [['trip', '🛒', 'Trip'], ['plan', '📅', 'Week'], ['recipes', '🍲', 'Recipes'], ['receipt', '🧾', 'Receipt'], ['prices', '🏷️', 'Prices'], ['more', '☰', 'More']];
+  const TABS = [['trip', '🛒', 'Trip'], ['plan', '📅', 'Week'], ['prep', '🔪', 'Prep'], ['recipes', '🍲', 'Recipes'], ['receipt', '🧾', 'Receipt'], ['prices', '🏷️', 'Prices'], ['more', '☰', 'More']];
   let page = $state((location.hash || '').slice(1) || 'trip');
   function go(p) { page = p; history.replaceState(null, '', '#' + p); window.scrollTo(0, 0); }
   $effect(() => { const f = () => { const h = location.hash.slice(1); if (h && TABS.some((t) => t[0] === h)) page = h; }; addEventListener('hashchange', f); return () => removeEventListener('hashchange', f); });
@@ -24,6 +25,7 @@
 {:else}
   {#key page}
     {#if page === 'plan'}<Plan {go} />
+    {:else if page === 'prep'}<Prep {go} />
     {:else if page === 'recipes'}<Recipes />
     {:else if page === 'receipt'}<Receipt {go} />
     {:else if page === 'prices'}<Prices {go} />

@@ -80,3 +80,6 @@ nav.tabs button.on { color: var(--accent); }
 .ppl { display: inline-flex; align-items: center; gap: 4px; }
 .ppl button { padding: 0; width: 28px; height: 28px; border-radius: 8px; background: #fff; color: var(--ink); border: 1px solid var(--line); }
 .hero { background: linear-gradient(135deg, #fbeee4, #f7f3ec); border-radius: 18px; padding: 18px; margin: 8px 0 12px; border: 1px solid var(--line); }
+.bulkbar { position: sticky; top: 0; z-index: 5; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; background: #fff; border: 1px solid var(--accent); border-radius: 12px; padding: 8px 10px; margin-bottom: 8px; box-shadow: 0 2px 8px #0001; }
+.bulkbar b { margin-right: auto; font-size: 14px; }
+.bulkbar button { padding: 7px 11px; font-size: 13px; }

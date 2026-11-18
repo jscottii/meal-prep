@@ -1,8 +1,8 @@
 // Data layer: Supabase auth, loading, live sync, and every write the app makes.
 import { createClient } from '@supabase/supabase-js';
 import { SUPABASE_URL, SUPABASE_ANON_KEY, APP_URL } from './config.js';
-import { STORES_SEED, ITEMS_SEED, RECIPES, RECIPE_SERVINGS_SEED, RECIPE_ITEMS_SEED, HOME_DEFAULT, PANTRY_CHECK, SOURCE_URL } from './seed.js';
-import { neededUnits, planPortions, parseBareMinimum, buildImport } from './planner.js';
+import { STORES_SEED, ITEMS_SEED, RECIPES, RECIPE_SERVINGS_SEED, RECIPE_ITEMS_SEED, HOME_DEFAULT, PANTRY_CHECK, SOURCE_URL, TIMELINE, STORAGE } from './seed.js';
+import { neededUnits, planPortions, parseBareMinimum, buildImport, parsePrepGuide } from './planner.js';
 import { NOT_FOUND_DAYS, RECEIPT_FRESH_DAYS } from './receipts.js';
 import { titleMatches_ } from './optimizer.js';
 
@@ -164,7 +164,8 @@ export async function setHave(itemIds, have, storeId, paid) {
 }
 
 export async function savePlan({ household, days, selected, startNewWeek, pantry, sourceUrl }) {
-  const plan = { household: Number(household) || 3, days };
+  const plan = { ...app.plan, household: Number(household) || 3, days };
+  if (startNewWeek) plan.prepDone = {};
   const { error } = await sb.from('week_plan').upsert({ household_id: app.household, data: plan, updated_at: new Date().toISOString() });
   if (error) fail(error);
   app.plan = plan;
@@ -260,7 +261,49 @@ export async function importBareMinimum(slug) {
   const { error } = await sb.from('recipes').upsert(recs.map((r) => ({ household_id: app.household, ...r })));
   if (error) fail(error);
   recs.forEach((r) => { const v = toRecipe({ ...r, meal: r.meal }); const k = app.recipes.findIndex((x) => x.id === r.id); if (k >= 0) app.recipes[k] = v; else app.recipes.push(v); });
+  await keepGuide(url, post.title, post.html);
   return { title: post.title, url, recipeIds: recs.map((r) => r.id), newItems: newItems.length, reused: built.items.length - newItems.length, pantry: parsed.pantry.join(', ') };
+}
+
+/* ---------------- cook-day (bulk prep) guide ---------------- */
+async function keepGuide(url, title, html) {
+  const g = parsePrepGuide(html);
+  if (!g.sections.length) return null;
+  const guide = { title, url, sections: g.sections, saved: today() };
+  await saveSettings({ prepGuides: { ...(app.settings.prepGuides || {}), [url]: guide } });
+  return guide;
+}
+const SEED_GUIDE = {
+  title: 'A Full Week of Meals + A Shopping List', url: SOURCE_URL,
+  sections: [
+    { title: 'Clock-Time Timeline', kind: 'timeline', items: TIMELINE.map(([time, text]) => ({ time, label: '', text })) },
+    { title: 'What to Freeze', kind: 'list', items: STORAGE.freeze.map((text) => ({ time: '', label: '', text })).concat(STORAGE.noFreeze.map((x) => ({ time: '', label: "Don't freeze", text: x }))) },
+    { title: 'Easy Swaps', kind: 'list', items: STORAGE.swaps.map(([label, text]) => ({ time: '', label, text })) },
+    { title: 'Use Up the Leftovers', kind: 'list', items: STORAGE.leftovers.map((text) => ({ time: '', label: '', text })) }
+  ]
+};
+/** The saved guide for a recipe source (the starter week has one built in). */
+export function guideFor(url) {
+  if (!url) return null;
+  return app.settings.prepGuides?.[url] || (url === SOURCE_URL ? SEED_GUIDE : null);
+}
+/** Fetch the guide for a week imported before guides were kept. */
+export async function loadGuide(url) {
+  const slug = String(url).split('/p/')[1]?.split(/[?#/]/)[0];
+  if (!slug) throw new Error('That recipe didn\'t come from a Bare Minimum post.');
+  const post = await callProxy({ action: 'bm-post', slug });
+  const g = await keepGuide(url, post.title, post.html);
+  if (!g) throw new Error(post.free ? 'That post has no cook-day plan.' : 'That week is for paid subscribers, so its plan can\'t be read here.');
+  return g;
+}
+/** Tick a cook-day step on or off (shared with the other phone). */
+export async function setPrepDone(key, on) {
+  const prepDone = { ...(app.plan.prepDone || {}) };
+  if (on) prepDone[key] = 1; else delete prepDone[key];
+  const plan = { ...app.plan, prepDone };
+  app.plan = plan;
+  const { error } = await sb.from('week_plan').upsert({ household_id: app.household, data: plan, updated_at: new Date().toISOString() });
+  if (error) fail(error);
 }
 
 /* ---------------- prices ---------------- */

@@ -381,4 +381,31 @@ function scalePrices(prices, items, need, stores, costcoMode) {
 
 function slug_(s) { return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'item'; }
 
-export { parseBareMinimum, buildImport, neededUnits, planPortions, autoFillPlan, scalePrices, slug_, words_, PLAN_DAYS, PLAN_SLOTS };
+/**
+ * The cook-day guide from a post: "Before You Start" and "Order of Operations"
+ * (clock-time timeline, where it all goes, what to freeze, swaps, leftovers).
+ * Returns { sections: [{ title, kind: 'timeline'|'list', items: [{ time, label, text }] }] }
+ */
+function parsePrepGuide(html) {
+  var b = htmlBlocks_(html), sections = [], cur = null, inside = false, level = 'h9';
+  var isHead = function (x) { return /^h[1-6]$/.test(x.tag); };
+  for (var i = 0; i < b.length; i++) {
+    var x = b[i];
+    if (isHead(x)) {
+      if (/before you start|order of operations|game plan|cook day/i.test(x.text)) { inside = true; level = x.tag; cur = null; continue; }
+      if (inside && (x.tag <= level || /shopping list|lineup|other recipes|discussion|ready for more/i.test(x.text))) { inside = false; cur = null; continue; }
+      if (inside) { cur = { title: x.text, kind: /timeline|schedule/i.test(x.text) ? 'timeline' : 'list', items: [] }; sections.push(cur); }
+      continue;
+    }
+    if (!inside || (x.tag !== 'li' && x.tag !== 'p')) continue;
+    if (!cur) { cur = { title: 'Before you start', kind: 'list', items: [] }; sections.push(cur); }
+    var t = x.text.replace(/\s+/g, ' ').trim(), it = { time: '', label: '', text: t };
+    var tm = t.match(/^(\d{1,2}:\d{2}\s*(?:[ap]\.?m\.?)?)\s*[-–—:]\s*(.+)$/i);
+    if (tm) { it.time = tm[1].trim(); it.text = tm[2]; if (cur.kind !== 'timeline' && x.tag === 'li') cur.kind = 'timeline'; }
+    else { var lm = t.match(/^([^.!?]{2,48}?)\s+[-–—]\s+(.+)$/); if (lm && x.tag === 'li') { it.label = lm[1]; it.text = lm[2]; } }
+    cur.items.push(it);
+  }
+  return { sections: sections.filter(function (s) { return s.items.length; }) };
+}
+
+export { parsePrepGuide, parseBareMinimum, buildImport, neededUnits, planPortions, autoFillPlan, scalePrices, slug_, words_, PLAN_DAYS, PLAN_SLOTS };
