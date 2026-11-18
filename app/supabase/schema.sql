@@ -205,3 +205,15 @@ begin
     end;
   end loop;
 end $$;
+
+-- ---------------- table access for signed-in users (row level security still applies) ----------------
+grant usage on schema public to authenticated;
+grant select, insert, update, delete on households, members, invites, settings, stores, items, prices, recipes, week_plan, purchases to authenticated;
+grant select on serp_usage to authenticated;
+grant select, insert on store_locations to authenticated;
+grant select, insert, update on store_areas to authenticated;
+grant usage on all sequences in schema public to authenticated;
+grant execute on function my_household(), ensure_household(), has_serp_key(), set_serp_key(text) to authenticated;
+-- TRUNCATE ignores row level security, so nobody but the owner gets it
+revoke truncate, trigger, references on all tables in schema public from authenticated, anon;
+alter default privileges in schema public revoke truncate, trigger, references on tables from authenticated, anon;
