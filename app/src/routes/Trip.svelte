@@ -1,0 +1,102 @@
+<script>
+  import { app, need, portions, itemById, setHave, toast } from '../lib/db.svelte.js';
+  import { trip, planTrip, chosen, drawLine, useMyLocation, startAddress } from '../lib/trip.svelte.js';
+  import { directionsUrl } from '../lib/maps.js';
+  import RouteMap from '../components/RouteMap.svelte';
+  let { go } = $props();
+
+  const fmt = (x) => '$' + Number(x || 0).toFixed(2);
+  let plan = $derived(chosen());
+  let n = $derived(need());
+  let por = $derived(portions());
+  let active = $derived(app.recipes.filter((r) => r.active));
+  let bought = $derived(app.items.filter((i) => n[i.id] && i.have));
+  let left = $derived(app.items.filter((i) => n[i.id] && !i.have).length);
+  let byId = $derived(Object.fromEntries(trip.stores.map((s) => [s.id, s])));
+  let unpriced = $derived(plan ? plan.stores.reduce((a, s) => a + s.items.filter((i) => i.source === 'unpriced').length, 0) : 0);
+  let mapsLink = $derived(plan ? directionsUrl(startAddress(), app.settings.homeAddress, plan.stores.map((s) => byId[s.id]).filter(Boolean)) : '');
+
+  $effect(() => { if (app.ready && app.household && !trip.result && !trip.busy && !trip.error && left) planTrip(); });
+
+  async function tick(it, storeId) {
+    try { await setHave([it.id], true, storeId, { [it.id]: it.price }); toast(`✓ ${it.name}`); } catch (e) { toast(e.message); }
+  }
+  async function untick(id) { try { await setHave([id], false); } catch (e) { toast(e.message); } }
+  async function here() { try { await useMyLocation(); trip.result = null; planTrip(); } catch (e) { trip.error = e.message; } }
+  function setStart(m) { trip.start = m; if (m === 'home') { trip.result = null; planTrip(); } }
+  const src = (s) => ({ live: 'live', receipt: 'receipt', you: 'yours', estimate: 'est.', unpriced: 'no price yet' })[s] || s;
+</script>
+
+<div class="page">
+  <div class="spread"><h1>This week's trip</h1><button class="quiet" onclick={() => go('plan')}>Plan a new week →</button></div>
+  <p class="muted small">
+    {active.length} recipe{active.length === 1 ? '' : 's'}{Object.keys(por).length ? ` · ${Object.values(por).reduce((a, x) => a + x.portions, 0)} portions planned` : ''} · {left} item{left === 1 ? '' : 's'} to buy{bought.length ? `, ${bought.length} already bought` : ''}
+  </p>
+
+  <div class="card">
+    <div class="small muted" style="margin-bottom:6px">Starting from (you always end at home)</div>
+    <div class="seg">
+      <button class:on={trip.start === 'home'} onclick={() => setStart('home')}>🏠 Home</button>
+      <button class:on={trip.start === 'here'} onclick={here}>📍 Here</button>
+      <button class:on={trip.start === 'typed'} onclick={() => (trip.start = 'typed')}>✏️ Address</button>
+    </div>
+    {#if trip.start === 'typed'}
+      <div class="row" style="margin-top:8px">
+        <input class="grow" placeholder="e.g. 1 Broadway, Oakland" bind:value={trip.typed} onkeydown={(e) => e.key === 'Enter' && planTrip()} />
+        <button onclick={() => { trip.result = null; planTrip(); }}>Go</button>
+      </div>
+    {/if}
+    <p class="small muted" style="margin:8px 0 0">Each chain uses its location nearest to where you start.</p>
+  </div>
+
+  {#if trip.error}<div class="err">⚠️ {trip.error} <button class="quiet" onclick={() => { trip.error = ''; planTrip(); }}>Try again</button></div>{/if}
+
+  {#if trip.busy}
+    <div class="card row"><span class="spinner"></span> {trip.step || 'Planning…'}</div>
+  {:else if trip.result?.empty || (!left && app.ready)}
+    <div class="hero"><h2>Nothing left to buy 🎉</h2><p class="muted">Everything on this week's list is checked off. <a href="#plan" onclick={(e) => { e.preventDefault(); go('plan'); }}>Plan next week</a>.</p></div>
+  {:else if plan}
+    <div class="hero">
+      <div class="spread"><div><div class="muted small">Best trip · {plan.stores.length} stop{plan.stores.length === 1 ? '' : 's'}</div><div class="big">{fmt(plan.total)}</div><div class="small muted">all-in: groceries + gas + your time</div></div>
+        <a class="btn" href={mapsLink} target="_blank" rel="noopener">Directions ↗</a></div>
+      <div class="row" style="margin-top:12px">
+        <div class="stat"><b>{fmt(plan.groceries)}</b><span>groceries</span></div>
+        <div class="stat"><b>{plan.driveMin + plan.stopMin} min</b><span>{plan.driveMin} driving</span></div>
+        <div class="stat"><b>{plan.miles} mi</b><span>{fmt(plan.fuel)} gas</span></div>
+      </div>
+    </div>
+
+    <div class="seg" style="margin-bottom:6px">
+      {#each [['best', 'Best overall'], ['cheapest', 'Cheapest'], ['fastest', 'Fastest']] as [k, label]}
+        <button class:on={trip.choice === k} onclick={() => { trip.choice = k; drawLine(); }}>{label}</button>
+      {/each}
+    </div>
+
+    {#if trip.line?.coords}<RouteMap line={trip.line} />{/if}
+    {#if unpriced}<div class="note">{unpriced} item{unpriced === 1 ? ' has' : 's have'} no price yet, so {unpriced === 1 ? "it's" : "they're"} placed at a stop you're already making. {app.hasSerpKey ? 'Check prices on the Prices page' : 'Add a SerpApi key in Settings or upload a receipt'} to fill {unpriced === 1 ? 'it' : 'them'} in.</div>{/if}
+    {#if plan.missing.length}<div class="note">Not found on this route: {plan.missing.join(', ')}</div>{/if}
+
+    {#each plan.stores as st, i}
+      {@const loc = byId[st.id]}
+      <div class="stop">
+        <div class="spread"><h2 style="margin:0"><span class="stopnum">{i + 1}</span>{loc?.short || st.short}</h2><b>{fmt(st.subtotal)}</b></div>
+        <div class="small muted" style="margin:2px 0 6px 32px">{loc?.label || ''}{loc?.fromStart ? ` · ${loc.fromStart.minutes} min from start` : ''}</div>
+        {#each st.items as it}
+          {@const item = itemById(it.id)}
+          <label class="check" style:opacity={item?.have ? 0.45 : 1}>
+            <input type="checkbox" checked={!!item?.have} onchange={(e) => (e.currentTarget.checked ? tick(it, st.id) : untick(it.id))} />
+            <span class="grow"><b style:text-decoration={item?.have ? 'line-through' : ''}>{it.name}</b> <span class="muted small">{item?.qty}{n[it.id] && n[it.id] !== item?.units ? ` · buy ${n[it.id]}` : ''}</span><br>
+              <span class="small muted">{it.source === 'unpriced' ? 'price not checked yet' : fmt(it.price)} <span class="pill" class:live={it.source === 'live' || it.source === 'receipt'}>{src(it.source)}</span></span></span>
+          </label>
+        {/each}
+      </div>
+    {/each}
+    <p class="small muted">Compared {trip.result.considered} store combinations. <button class="quiet" onclick={planTrip}>↻ Re-plan</button></p>
+  {/if}
+
+  {#if bought.length}
+    <div class="card"><h3>Already bought ({bought.length})</h3>
+      {#each bought as b}<div class="list-row"><span>{b.name} <span class="small muted">{b.haveOn}</span></span><button class="quiet" onclick={() => untick(b.id)}>Undo</button></div>{/each}
+    </div>
+  {/if}
+</div>

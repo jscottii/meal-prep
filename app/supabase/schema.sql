@@ -1,0 +1,198 @@
+-- Meal Prep Shopper — Supabase schema
+-- Every row belongs to a household; you only see your own household's rows (row level security).
+
+create table if not exists households (
+  id uuid primary key default gen_random_uuid(),
+  name text not null default 'Our household',
+  created_at timestamptz not null default now()
+);
+
+create table if not exists members (
+  user_id uuid primary key references auth.users on delete cascade,
+  household_id uuid not null references households on delete cascade,
+  email text,
+  created_at timestamptz not null default now()
+);
+
+-- someone invited by email joins that household on first sign-in
+create table if not exists invites (
+  email text primary key,
+  household_id uuid not null references households on delete cascade,
+  invited_by uuid references auth.users on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create or replace function my_household() returns uuid
+language sql stable security definer set search_path = public as $$
+  select household_id from members where user_id = auth.uid()
+$$;
+
+-- First sign-in: join the household you were invited to, or start a new one.
+-- Returns { household_id, created } — created = true means the app should load starter data.
+create or replace function ensure_household() returns json
+language plpgsql security definer set search_path = public as $$
+declare hid uuid; em text; inv uuid;
+begin
+  if auth.uid() is null then raise exception 'not signed in'; end if;
+  select household_id into hid from members where user_id = auth.uid();
+  if hid is not null then return json_build_object('household_id', hid, 'created', false); end if;
+  select lower(email) into em from auth.users where id = auth.uid();
+  select household_id into inv from invites where lower(email) = em;
+  if inv is not null then
+    insert into members(user_id, household_id, email) values (auth.uid(), inv, em);
+    delete from invites where lower(email) = em;
+    return json_build_object('household_id', inv, 'created', false);
+  end if;
+  insert into households default values returning id into hid;
+  insert into members(user_id, household_id, email) values (auth.uid(), hid, em);
+  return json_build_object('household_id', hid, 'created', true);
+end $$;
+
+create table if not exists settings (
+  household_id uuid primary key references households on delete cascade default my_household(),
+  data jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists stores (
+  household_id uuid not null references households on delete cascade default my_household(),
+  id text not null,
+  name text, short text, address text, source text, merchant text, hours text, ad text,
+  bulk boolean not null default false, enabled boolean not null default true, sort int not null default 0,
+  primary key (household_id, id)
+);
+
+create table if not exists items (
+  household_id uuid not null references households on delete cascade default my_household(),
+  id text not null,
+  cat text, name text, qty text, q text, must text[] not null default '{}', units numeric not null default 1,
+  have_on date,
+  primary key (household_id, id)
+);
+
+create table if not exists prices (
+  household_id uuid not null references households on delete cascade default my_household(),
+  item_id text not null, store_id text not null,
+  price numeric, unit_price numeric, unit_needed numeric,
+  source text, matched text, updated_at timestamptz default now(), checked_at timestamptz,
+  locked boolean not null default false, not_found_on date,
+  primary key (household_id, item_id, store_id)
+);
+
+create table if not exists recipes (
+  household_id uuid not null references households on delete cascade default my_household(),
+  id text not null,
+  title text not null, active boolean not null default false, servings numeric, yield text, meal text,
+  fridge text, freeze text, ing text[] not null default '{}', steps text[] not null default '{}', tip text,
+  custom boolean not null default false, source text, items jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  primary key (household_id, id)
+);
+
+create table if not exists week_plan (
+  household_id uuid primary key references households on delete cascade default my_household(),
+  data jsonb not null default '{"days":[]}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists purchases (
+  id bigint generated always as identity primary key,
+  household_id uuid not null references households on delete cascade default my_household(),
+  day date not null default current_date,
+  store_id text, store text, item_id text, item text,
+  planned numeric, paid numeric, status text, receipt_line text,
+  created_at timestamptz not null default now()
+);
+create index if not exists purchases_household_day on purchases(household_id, day desc);
+
+-- SerpApi key: members can write it, nobody can read it back (only the server function can)
+create table if not exists household_secrets (
+  household_id uuid primary key references households on delete cascade default my_household(),
+  serpapi_key text,
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists serp_usage (
+  household_id uuid not null references households on delete cascade,
+  month text not null,
+  n int not null default 0,
+  primary key (household_id, month)
+);
+
+-- Store locations found on the map are shared by everyone (they're public places)
+create table if not exists store_locations (
+  chain text not null, name text, label text, lat double precision not null, lng double precision not null,
+  source text default 'OpenStreetMap', created_at timestamptz not null default now(),
+  primary key (chain, lat, lng)
+);
+create table if not exists store_areas (
+  cell text primary key, searched_at timestamptz not null default now(), found int not null default 0
+);
+
+-- ---------------- row level security ----------------
+alter table households enable row level security;
+alter table members enable row level security;
+alter table invites enable row level security;
+alter table settings enable row level security;
+alter table stores enable row level security;
+alter table items enable row level security;
+alter table prices enable row level security;
+alter table recipes enable row level security;
+alter table week_plan enable row level security;
+alter table purchases enable row level security;
+alter table household_secrets enable row level security;
+alter table serp_usage enable row level security;
+alter table store_locations enable row level security;
+alter table store_areas enable row level security;
+
+drop policy if exists "own household" on households;
+create policy "own household" on households for all using (id = my_household()) with check (id = my_household());
+drop policy if exists "see household members" on members;
+create policy "see household members" on members for select using (household_id = my_household());
+drop policy if exists "manage invites" on invites;
+create policy "manage invites" on invites for all using (household_id = my_household()) with check (household_id = my_household());
+
+do $$
+declare t text;
+begin
+  foreach t in array array['settings','stores','items','prices','recipes','week_plan','purchases'] loop
+    execute format('drop policy if exists "household rows" on %I', t);
+    execute format('create policy "household rows" on %I for all using (household_id = my_household()) with check (household_id = my_household())', t);
+  end loop;
+end $$;
+
+drop policy if exists "write own secret" on household_secrets;
+create policy "write own secret" on household_secrets for insert with check (household_id = my_household());
+drop policy if exists "update own secret" on household_secrets;
+create policy "update own secret" on household_secrets for update using (household_id = my_household()) with check (household_id = my_household());
+drop policy if exists "see own usage" on serp_usage;
+create policy "see own usage" on serp_usage for select using (household_id = my_household());
+
+drop policy if exists "read locations" on store_locations;
+create policy "read locations" on store_locations for select to authenticated using (true);
+drop policy if exists "add locations" on store_locations;
+create policy "add locations" on store_locations for insert to authenticated with check (true);
+drop policy if exists "read areas" on store_areas;
+create policy "read areas" on store_areas for select to authenticated using (true);
+drop policy if exists "add areas" on store_areas;
+create policy "add areas" on store_areas for insert to authenticated with check (true);
+drop policy if exists "update areas" on store_areas;
+create policy "update areas" on store_areas for update to authenticated using (true) with check (true);
+
+-- does this household have a SerpApi key saved? (without revealing it)
+create or replace function has_serp_key() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists(select 1 from household_secrets where household_id = my_household() and coalesce(serpapi_key,'') <> '')
+$$;
+
+-- ---------------- live sync between phones ----------------
+do $$
+declare t text;
+begin
+  foreach t in array array['items','prices','recipes','week_plan','purchases','settings','stores'] loop
+    begin
+      execute format('alter publication supabase_realtime add table %I', t);
+    exception when duplicate_object then null;
+    end;
+  end loop;
+end $$;

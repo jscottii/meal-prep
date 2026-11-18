@@ -1,0 +1,358 @@
+// Data layer: Supabase auth, loading, live sync, and every write the app makes.
+import { createClient } from '@supabase/supabase-js';
+import { SUPABASE_URL, SUPABASE_ANON_KEY, APP_URL } from './config.js';
+import { STORES_SEED, ITEMS_SEED, RECIPES, RECIPE_SERVINGS_SEED, RECIPE_ITEMS_SEED, HOME_DEFAULT, PANTRY_CHECK, SOURCE_URL } from './seed.js';
+import { neededUnits, planPortions, parseBareMinimum, buildImport } from './planner.js';
+import { NOT_FOUND_DAYS, RECEIPT_FRESH_DAYS } from './receipts.js';
+import { titleMatches_ } from './optimizer.js';
+
+export const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: true, detectSessionInUrl: true, flowType: 'pkce' } });
+
+export const DEFAULT_SETTINGS = {
+  homeAddress: HOME_DEFAULT, mpg: 28, gasPrice: 5.6, timeValue: 25, stopMinutes: 12, maxStores: 3,
+  costcoMember: false, costcoMode: 'pack', enabledStores: ['sbf', 'tj', 'tgt', 'lucky', 'raleys', 'costco'],
+  householdSize: 3, nearestStores: true, serpMonthlyLimit: 230, serpLocation: '', pantry: PANTRY_CHECK, sourceUrl: SOURCE_URL
+};
+
+export const app = $state({
+  ready: false, session: null, user: null, household: null, error: '', toast: '',
+  settings: { ...DEFAULT_SETTINGS }, stores: [], items: [], prices: {}, recipes: [], plan: { household: 3, days: [] }, purchases: [],
+  members: [], invites: [], hasSerpKey: false, serpUsage: { n: 0, limit: 230 }
+});
+
+/* ---------------- derived helpers ---------------- */
+export function need() { return neededUnits(app.recipes, app.plan); }
+export function portions() { return planPortions(app.plan, app.recipes); }
+export function itemById(id) { return app.items.find((i) => i.id === id); }
+export function storeById(id) { return app.stores.find((s) => s.id === id); }
+export function recipeById(id) { return app.recipes.find((r) => r.id === id); }
+export function toast(msg) { app.toast = msg; setTimeout(() => { if (app.toast === msg) app.toast = ''; }, 3500); }
+function fail(e) { const m = (e && (e.message || e.error_description)) || String(e); app.error = m; throw new Error(m); }
+const today = () => new Date().toISOString().slice(0, 10);
+const daysAgo = (d) => (d ? (Date.now() - new Date(d).getTime()) / 864e5 : Infinity);
+
+/* ---------------- row ↔ app shape ---------------- */
+const toItem = (r) => ({ id: r.id, cat: r.cat, name: r.name, qty: r.qty, q: r.q, must: r.must || [], units: Number(r.units) || 1, have: !!r.have_on, haveOn: r.have_on || '' });
+const toRecipe = (r) => ({ id: r.id, title: r.title, active: r.active, servings: Number(r.servings) || 0, yield: r.yield || '', when: r.meal || '', fridge: r.fridge || '', freeze: r.freeze || '',
+  ing: r.ing || [], steps: r.steps || [], tip: r.tip || '', custom: r.custom, source: r.source || '', items: r.items || {}, createdAt: r.created_at });
+const fromRecipe = (r) => ({ id: r.id, title: r.title, active: !!r.active, servings: Number(r.servings) || null, yield: r.yield || '', meal: r.when || '', fridge: r.fridge || '', freeze: r.freeze || '',
+  ing: r.ing || [], steps: r.steps || [], tip: r.tip || '', custom: !!r.custom, source: r.source || '', items: r.items || {} });
+function setPrice(row) {
+  const e = (app.prices[row.item_id] = app.prices[row.item_id] || {});
+  e[row.store_id] = { price: row.price == null ? null : Number(row.price), unitPrice: row.unit_price, unitNeeded: row.unit_needed == null ? null : Number(row.unit_needed),
+    source: row.source || '', matched: row.matched || '', updated: row.updated_at, checkedAt: row.checked_at, locked: row.locked,
+    notFound: !!row.not_found_on && daysAgo(row.not_found_on) < NOT_FOUND_DAYS, notFoundOn: row.not_found_on || '' };
+}
+
+/* ---------------- auth ---------------- */
+export async function signIn(email) {
+  const { error } = await sb.auth.signInWithOtp({ email: email.trim(), options: { emailRedirectTo: APP_URL } });
+  if (error) fail(error);
+}
+export async function signOut() { await sb.auth.signOut(); location.reload(); }
+
+export async function start() {
+  const { data } = await sb.auth.getSession();
+  app.session = data.session; app.user = data.session?.user || null;
+  sb.auth.onAuthStateChange((_e, s) => {
+    const was = !!app.session; app.session = s; app.user = s?.user || null;
+    if (s && !was) boot();
+  });
+  if (app.session) await boot(); else app.ready = true;
+}
+
+async function boot() {
+  try {
+    app.error = '';
+    const { data, error } = await sb.rpc('ensure_household');
+    if (error) fail(error);
+    app.household = data.household_id;
+    if (data.created) await seedHousehold();
+    await loadAll();
+    subscribe();
+  } catch (e) { app.error = String(e.message || e); }
+  app.ready = true;
+}
+
+/** First sign-in: copy the starter stores, items, estimated prices and recipes into the new household. */
+async function seedHousehold() {
+  const stores = STORES_SEED.map((s, i) => ({ id: s.id, name: s.name, short: s.short, address: s.address, source: s.source, merchant: s.serpMerchant || null,
+    hours: s.hours, ad: s.ad, bulk: !!s.bulk, enabled: s.enabled !== false, sort: i }));
+  const items = ITEMS_SEED.map((x) => ({ id: x[0], cat: x[1], name: x[2], qty: x[3], q: x[5], must: x[6], units: x[7] }));
+  const prices = [];
+  ITEMS_SEED.forEach((x) => Object.entries(x[8]).forEach(([sid, v]) => {
+    const arr = Array.isArray(v);
+    prices.push({ item_id: x[0], store_id: sid, price: arr ? v[0] : v, unit_needed: arr ? v[2] : null, matched: arr ? v[1] : null, source: 'estimate' });
+  }));
+  const recipes = RECIPES.map((r) => fromRecipe({ ...r, active: true, servings: RECIPE_SERVINGS_SEED[r.id], items: RECIPE_ITEMS_SEED[r.id] || {}, source: SOURCE_URL }));
+  for (const [t, rows] of [['stores', stores], ['items', items], ['prices', prices], ['recipes', recipes]]) {
+    const { error } = await sb.from(t).insert(rows); if (error) fail(error);
+  }
+  await sb.from('settings').insert({ data: DEFAULT_SETTINGS });
+  await sb.from('week_plan').insert({ data: { household: 3, days: [] } });
+}
+
+export async function loadAll() {
+  const [st, s, i, p, r, w, pu, m, inv, key, use] = await Promise.all([
+    sb.from('settings').select('data').maybeSingle(),
+    sb.from('stores').select('*').order('sort'),
+    sb.from('items').select('*'),
+    sb.from('prices').select('*'),
+    sb.from('recipes').select('*').order('created_at'),
+    sb.from('week_plan').select('data').maybeSingle(),
+    sb.from('purchases').select('*').order('day', { ascending: false }).order('id', { ascending: false }).limit(600),
+    sb.from('members').select('email,user_id'),
+    sb.from('invites').select('email'),
+    sb.rpc('has_serp_key'),
+    sb.from('serp_usage').select('n').eq('month', new Date().toISOString().slice(0, 7)).maybeSingle()
+  ]);
+  for (const x of [st, s, i, p, r, w, pu]) if (x.error) fail(x.error);
+  app.settings = { ...DEFAULT_SETTINGS, ...(st.data?.data || {}) };
+  app.stores = s.data.map((x) => ({ ...x, serpMerchant: x.merchant }));
+  app.items = i.data.map(toItem);
+  app.prices = {}; p.data.forEach(setPrice);
+  app.recipes = r.data.map(toRecipe);
+  app.plan = { household: Number(app.settings.householdSize) || 3, days: [], ...(w.data?.data || {}) };
+  app.purchases = pu.data;
+  app.members = m.data || []; app.invites = inv.data || [];
+  app.hasSerpKey = !!key.data;
+  app.serpUsage = { n: use.data?.n || 0, limit: Number(app.settings.serpMonthlyLimit) || 230 };
+}
+
+let channel = null, reloadTimer = null;
+function subscribe() {
+  if (channel) sb.removeChannel(channel);
+  channel = sb.channel('household-' + app.household);
+  ['items', 'prices', 'recipes', 'week_plan', 'purchases', 'settings', 'stores'].forEach((table) => {
+    channel.on('postgres_changes', { event: '*', schema: 'public', table, filter: `household_id=eq.${app.household}` }, (ev) => {
+      // small, frequent changes are applied directly; anything else triggers a quiet reload
+      if (table === 'items' && ev.new?.id) { const k = app.items.findIndex((x) => x.id === ev.new.id); if (k >= 0) { app.items[k] = toItem(ev.new); return; } }
+      if (table === 'prices' && ev.new?.item_id) { setPrice(ev.new); return; }
+      if (table === 'week_plan' && ev.new?.data) { app.plan = { household: app.plan.household, days: [], ...ev.new.data }; return; }
+      clearTimeout(reloadTimer); reloadTimer = setTimeout(() => loadAll().catch(() => {}), 600);
+    });
+  });
+  channel.subscribe();
+}
+
+/* ---------------- writes ---------------- */
+export async function saveSettings(patch) {
+  const data = { ...app.settings, ...patch };
+  const { error } = await sb.from('settings').upsert({ household_id: app.household, data, updated_at: new Date().toISOString() });
+  if (error) fail(error);
+  app.settings = data; app.serpUsage.limit = Number(data.serpMonthlyLimit) || 230;
+}
+
+/** Tick items off (or back on). Bought items leave the list until a new week starts. */
+export async function setHave(itemIds, have, storeId, paid) {
+  const day = have ? today() : null;
+  const { error } = await sb.from('items').update({ have_on: day }).in('id', itemIds);
+  if (error) fail(error);
+  itemIds.forEach((id) => { const it = itemById(id); if (it) { it.have = !!have; it.haveOn = day || ''; } });
+  if (have && storeId) {
+    const st = storeById(storeId);
+    const rows = itemIds.map((id) => ({ day, store_id: storeId, store: st?.short, item_id: id, item: itemById(id)?.name, planned: paid?.[id] ?? null, status: 'Checked off' }));
+    const { data, error: e2 } = await sb.from('purchases').insert(rows).select();
+    if (!e2 && data) app.purchases = [...data, ...app.purchases];
+  }
+}
+
+export async function savePlan({ household, days, selected, startNewWeek, pantry, sourceUrl }) {
+  const plan = { household: Number(household) || 3, days };
+  const { error } = await sb.from('week_plan').upsert({ household_id: app.household, data: plan, updated_at: new Date().toISOString() });
+  if (error) fail(error);
+  app.plan = plan;
+  const on = new Set(selected || []);
+  days.forEach((d) => ['breakfast', 'lunch', 'dinner', 'snack'].forEach((s) => d[s] && on.add(d[s])));
+  const toOn = app.recipes.filter((r) => on.has(r.id) && !r.active).map((r) => r.id);
+  const toOff = app.recipes.filter((r) => !on.has(r.id) && r.active).map((r) => r.id);
+  if (toOn.length) await sb.from('recipes').update({ active: true }).in('id', toOn);
+  if (toOff.length) await sb.from('recipes').update({ active: false }).in('id', toOff);
+  app.recipes.forEach((r) => (r.active = on.has(r.id)));
+  const patch = { householdSize: plan.household };
+  if (pantry) patch.pantry = pantry;
+  if (sourceUrl) patch.sourceUrl = sourceUrl;
+  await saveSettings(patch);
+  if (startNewWeek) {
+    await sb.from('items').update({ have_on: null }).not('have_on', 'is', null);
+    app.items.forEach((i) => { i.have = false; i.haveOn = ''; });
+  }
+}
+
+export async function setRecipeActive(id, active) {
+  const { error } = await sb.from('recipes').update({ active }).eq('id', id);
+  if (error) fail(error);
+  const r = recipeById(id); if (r) r.active = active;
+  if (!active && app.plan.days.some((d) => ['breakfast', 'lunch', 'dinner', 'snack'].some((s) => d[s] === id))) {
+    const days = app.plan.days.map((d) => { const x = { ...d }; ['breakfast', 'lunch', 'dinner', 'snack'].forEach((s) => { if (x[s] === id) x[s] = ''; }); return x; });
+    await savePlan({ household: app.plan.household, days, selected: app.recipes.filter((q) => q.active).map((q) => q.id) });
+  }
+}
+
+/** Add or update one of your own recipes. newItems: [{name, cat, qty, units}] become shopping items. */
+export async function saveRecipe(rec, newItems = []) {
+  const items = { ...(rec.items || {}) };
+  for (const n of newItems) {
+    const base = n.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'item';
+    let id = base, k = 2; while (itemById(id)) id = base + '-' + k++;
+    const word = n.name.toLowerCase().split(/[^a-z]+/).filter((w) => w.length >= 3).pop() || n.name.toLowerCase();
+    const row = { id, cat: n.cat || 'Pantry', name: n.name, qty: n.qty || '1', q: n.name.toLowerCase(), must: [word], units: Number(n.units) || 1 };
+    const { error } = await sb.from('items').insert(row); if (error) fail(error);
+    app.items.push(toItem(row));
+    items[id] = Number(n.units) || 1;
+  }
+  if (!rec.id) {
+    const base = rec.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+    let id = base, k = 2; while (recipeById(id)) id = base + '-' + k++;
+    rec.id = id; rec.custom = true; rec.active = rec.active !== false;
+  }
+  const row = fromRecipe({ ...rec, items });
+  const { error } = await sb.from('recipes').upsert({ household_id: app.household, ...row });
+  if (error) fail(error);
+  const i = app.recipes.findIndex((r) => r.id === rec.id);
+  const v = toRecipe({ ...row, meal: row.meal });
+  if (i >= 0) app.recipes[i] = v; else app.recipes.push(v);
+  return rec.id;
+}
+export async function deleteRecipe(id) {
+  const { error } = await sb.from('recipes').delete().eq('id', id); if (error) fail(error);
+  app.recipes = app.recipes.filter((r) => r.id !== id);
+}
+
+/* ---------------- the bare minimum ---------------- */
+export async function callProxy(body) {
+  const { data, error } = await sb.functions.invoke('proxy', { body });
+  if (error) {
+    let msg = error.message;
+    try { const j = await error.context.json(); msg = j.error || msg; } catch (_) {}
+    throw new Error(msg);
+  }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+export async function listBareMinimum() {
+  const { posts } = await callProxy({ action: 'bm-archive' });
+  const imported = new Map();
+  app.recipes.forEach((r) => { if (r.source) { const s = r.source.split('/p/')[1]; if (s) (imported.get(s) || imported.set(s, []).get(s)).push(r.id); } });
+  return posts.filter((p) => /week of meals|meal plan|shopping list/i.test(p.title)).map((p) => ({ ...p, recipeIds: imported.get(p.slug) || null }));
+}
+
+/** Bring a week's recipes + shopping list into your library (switched off until you pick them). */
+export async function importBareMinimum(slug) {
+  const post = await callProxy({ action: 'bm-post', slug });
+  const parsed = parseBareMinimum(post.html);
+  if (!parsed.recipes.length) throw new Error(post.free ? "Couldn't find recipes in that post." : "That week is for paid subscribers, so its recipes can't be read here. Pick a free week.");
+  const built = buildImport(parsed, app.items.map((i) => ({ id: i.id, name: i.name, qty: i.qty, units: i.units })), 'bm' + String(post.date).slice(5).replace('-', ''));
+  const url = post.url || `https://barefoodtim.substack.com/p/${slug}`;
+  const newItems = built.items.filter((i) => i.isNew);
+  if (newItems.length) {
+    const rows = newItems.map((it) => ({ id: it.id, cat: it.cat, name: it.name, qty: it.qty || '1', q: it.q, must: it.must, units: it.units }));
+    const { error } = await sb.from('items').insert(rows); if (error) fail(error);
+    rows.forEach((r) => app.items.push(toItem(r)));
+  }
+  const recs = built.recipes.map((r) => fromRecipe({ ...r, active: false, source: url }));
+  const { error } = await sb.from('recipes').upsert(recs.map((r) => ({ household_id: app.household, ...r })));
+  if (error) fail(error);
+  recs.forEach((r) => { const v = toRecipe({ ...r, meal: r.meal }); const k = app.recipes.findIndex((x) => x.id === r.id); if (k >= 0) app.recipes[k] = v; else app.recipes.push(v); });
+  return { title: post.title, url, recipeIds: recs.map((r) => r.id), newItems: newItems.length, reused: built.items.length - newItems.length, pantry: parsed.pantry.join(', ') };
+}
+
+/* ---------------- prices ---------------- */
+export async function upsertPrices(rows) {
+  if (!rows.length) return;
+  const { error } = await sb.from('prices').upsert(rows.map((r) => ({ household_id: app.household, ...r })));
+  if (error) fail(error);
+  rows.forEach((r) => setPrice({ ...(priceRow(r.item_id, r.store_id)), ...r }));
+}
+function priceRow(itemId, storeId) {
+  const e = app.prices[itemId]?.[storeId]; if (!e) return {};
+  return { price: e.price, unit_needed: e.unitNeeded, source: e.source, matched: e.matched, updated_at: e.updated, checked_at: e.checkedAt, locked: e.locked, not_found_on: e.notFoundOn || null };
+}
+export async function setPriceByHand(itemId, storeId, price, lock = true) {
+  await upsertPrices([{ item_id: itemId, store_id: storeId, price: price === '' ? null : Number(price), source: 'you', locked: lock, updated_at: new Date().toISOString() }]);
+}
+
+export async function saveSerpKey(key) {
+  const { error } = await sb.from('household_secrets').upsert({ household_id: app.household, serpapi_key: key.replace(/\s+/g, ''), updated_at: new Date().toISOString() });
+  if (error) fail(error);
+  app.hasSerpKey = true;
+}
+export async function testSerpKey() { return callProxy({ action: 'serp-account' }); }
+
+let serpLoc = null;
+async function serpLocation(geo) {
+  if (app.settings.serpLocation) return app.settings.serpLocation;
+  if (serpLoc) return serpLoc;
+  try { serpLoc = (await callProxy({ action: 'serp-location', city: geo?.city || 'Alameda', state: geo?.state || 'California' })).location; }
+  catch (_) { serpLoc = 'California, United States'; }
+  return serpLoc;
+}
+
+/**
+ * Live price check for this week's list: one Google Shopping search per item covers every store.
+ * Skips items checked in the last 2 days, locked prices and recent receipt prices.
+ */
+export async function refreshPrices(geo, onProgress) {
+  const n = need(), loc = await serpLocation(geo);
+  const items = app.items.filter((i) => n[i.id] && !i.have);
+  const serpStores = app.stores.filter((s) => s.source === 'serpapi' || s.source === 'target');
+  const stats = { live: 0, searched: 0, recent: 0, kept: 0, notListed: 0, budget: false, location: loc };
+  let done = 0;
+  for (const it of items) {
+    onProgress?.(++done, items.length, it.name);
+    const row = app.prices[it.id] || {};
+    const last = Math.max(0, ...Object.values(row).map((e) => (e.checkedAt ? new Date(e.checkedAt).getTime() : 0)));
+    if (Date.now() - last < 2 * 864e5) { stats.recent++; continue; }
+    let res;
+    try { res = await callProxy({ action: 'serp-search', q: it.q || it.name, location: loc }); }
+    catch (e) { if (/limit/i.test(e.message)) { stats.budget = true; break; } throw e; }
+    stats.searched++; app.serpUsage.n = res.used;
+    const now = new Date().toISOString(), rows = [];
+    for (const s of serpStores) {
+      const e = row[s.id] || {};
+      if (e.locked || (e.source === 'receipt' && daysAgo(e.updated) < RECEIPT_FRESH_DAYS)) { stats.kept++; continue; }
+      const m = String(s.serpMerchant || s.short || '').toLowerCase().replace(/[’']/g, '');
+      const hit = res.results.find((x) => x.price && String(x.source || '').toLowerCase().replace(/[’']/g, '').includes(m) && titleMatches_(x.title, it.must));
+      if (hit) { rows.push({ item_id: it.id, store_id: s.id, price: Math.round(hit.price * (it.units || 1) * 100) / 100, unit_price: hit.price, source: 'live', matched: `${hit.title} [${hit.source}]`, updated_at: now, checked_at: now }); stats.live++; }
+      else { rows.push({ ...priceRow(it.id, s.id), item_id: it.id, store_id: s.id, checked_at: now }); stats.notListed++; }
+    }
+    await upsertPrices(rows);
+  }
+  return stats;
+}
+
+/* ---------------- receipts ---------------- */
+/** Save a checked receipt: prices become "receipt" prices, found items are ticked off, misses are skipped at that store for 30 days. */
+export async function saveReceipt(storeId, rows, date) {
+  const st = storeById(storeId), now = new Date().toISOString(), day = date || today();
+  const priceRows = [], buy = [], log = [];
+  for (const r of rows) {
+    if (!r.itemId) continue;
+    const it = itemById(r.itemId), planned = app.prices[r.itemId]?.[storeId]?.price ?? null;
+    if (r.status === 'notfound') {
+      priceRows.push({ ...priceRow(r.itemId, storeId), item_id: r.itemId, store_id: storeId, not_found_on: day });
+      log.push({ day, store_id: storeId, store: st?.short, item_id: r.itemId, item: it?.name, planned, paid: null, status: 'Not found', receipt_line: '' });
+    } else if (r.paid != null && r.paid !== '') {
+      const paid = Number(r.paid);
+      priceRows.push({ item_id: r.itemId, store_id: storeId, price: paid, unit_price: Math.round(paid / (it?.units || 1) * 100) / 100, source: 'receipt', matched: r.line || '', updated_at: now, checked_at: now, not_found_on: null, locked: false });
+      buy.push(r.itemId);
+      log.push({ day, store_id: storeId, store: st?.short, item_id: r.itemId, item: it?.name, planned, paid, status: 'Bought', receipt_line: r.line || '' });
+    }
+  }
+  await upsertPrices(priceRows);
+  if (buy.length) { await sb.from('items').update({ have_on: day }).in('id', buy); buy.forEach((id) => { const it = itemById(id); if (it) { it.have = true; it.haveOn = day; } }); }
+  if (log.length) { const { data } = await sb.from('purchases').insert(log).select(); if (data) app.purchases = [...data, ...app.purchases]; }
+  return { saved: priceRows.length, bought: buy.length };
+}
+
+/* ---------------- household ---------------- */
+export async function invite(email) {
+  const { error } = await sb.from('invites').upsert({ email: email.trim().toLowerCase(), household_id: app.household, invited_by: app.user.id });
+  if (error) fail(error);
+  app.invites = [...app.invites.filter((x) => x.email !== email.trim().toLowerCase()), { email: email.trim().toLowerCase() }];
+}
+
+export async function saveStore(s) {
+  const { error } = await sb.from('stores').upsert({ household_id: app.household, id: s.id, name: s.name, short: s.short, address: s.address, source: s.source, merchant: s.serpMerchant || s.merchant || null, hours: s.hours, ad: s.ad, bulk: !!s.bulk, enabled: s.enabled !== false, sort: s.sort || 0 });
+  if (error) fail(error);
+}
