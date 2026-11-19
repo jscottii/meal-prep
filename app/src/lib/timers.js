@@ -1,0 +1,32 @@
+// Cook-day timer alerts: sound, vibration, notification, and keeping the screen awake.
+let ctx = null, lock = null;
+
+/** Call from a tap so iPhone allows sound later. */
+export function unlockAudio() {
+  try { ctx = ctx || new (window.AudioContext || window.webkitAudioContext)(); if (ctx.state === 'suspended') ctx.resume(); } catch {}
+  try { if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission(); } catch {}
+}
+
+export function alarm(label) {
+  try {
+    if (ctx) {
+      const t = ctx.currentTime;
+      [0, 0.35, 0.7, 1.4, 1.75, 2.1].forEach((d) => {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.frequency.value = 880; o.connect(g); g.connect(ctx.destination);
+        g.gain.setValueAtTime(0.0001, t + d); g.gain.exponentialRampToValueAtTime(0.4, t + d + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.25);
+        o.start(t + d); o.stop(t + d + 0.3);
+      });
+    }
+  } catch {}
+  try { navigator.vibrate?.([300, 150, 300, 150, 300]); } catch {}
+  try { if ('Notification' in window && Notification.permission === 'granted') new Notification('⏰ Timer done', { body: label, tag: label }); } catch {}
+}
+
+/** Keep the screen on while timers run (cook day). */
+export async function keepAwake(on) {
+  try {
+    if (on && !lock && 'wakeLock' in navigator) { lock = await navigator.wakeLock.request('screen'); lock.addEventListener('release', () => (lock = null)); }
+    if (!on && lock) { await lock.release(); lock = null; }
+  } catch {}
+}

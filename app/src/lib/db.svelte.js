@@ -165,7 +165,7 @@ export async function setHave(itemIds, have, storeId, paid) {
 
 export async function savePlan({ household, days, selected, startNewWeek, pantry, sourceUrl }) {
   const plan = { ...app.plan, household: Number(household) || 3, days };
-  if (startNewWeek) plan.prepDone = {};
+  if (startNewWeek) { plan.prepDone = {}; plan.timers = {}; }
   const { error } = await sb.from('week_plan').upsert({ household_id: app.household, data: plan, updated_at: new Date().toISOString() });
   if (error) fail(error);
   app.plan = plan;
@@ -297,10 +297,25 @@ export async function loadGuide(url) {
   return g;
 }
 /** Tick a cook-day step on or off (shared with the other phone). */
-export async function setPrepDone(key, on) {
-  const prepDone = { ...(app.plan.prepDone || {}) };
-  if (on) prepDone[key] = 1; else delete prepDone[key];
-  const plan = { ...app.plan, prepDone };
+export async function setPrepDone(key, on, timer) {
+  return updatePrep(on ? [key] : [], on ? [] : [key], timer ? { [key]: timer } : {});
+}
+/**
+ * Tick cook-day steps on/off and start/stop their timers in one save (shared with the other phone).
+ * timers: { key: { label, mins, maxMins } } start when the step is ticked; unticking a step stops its timer.
+ */
+export async function updatePrep(on = [], off = [], timers = {}) {
+  const prepDone = { ...(app.plan.prepDone || {}) }, all = { ...(app.plan.timers || {}) };
+  on.forEach((k) => { prepDone[k] = 1; if (timers[k] && !all[k]) all[k] = { ...timers[k], start: Date.now() }; });
+  off.forEach((k) => { delete prepDone[k]; delete all[k]; });
+  const plan = { ...app.plan, prepDone, timers: all };
+  app.plan = plan;
+  const { error } = await sb.from('week_plan').upsert({ household_id: app.household, data: plan, updated_at: new Date().toISOString() });
+  if (error) fail(error);
+}
+export async function clearTimer(key) {
+  const all = { ...(app.plan.timers || {}) }; delete all[key];
+  const plan = { ...app.plan, timers: all };
   app.plan = plan;
   const { error } = await sb.from('week_plan').upsert({ household_id: app.household, data: plan, updated_at: new Date().toISOString() });
   if (error) fail(error);

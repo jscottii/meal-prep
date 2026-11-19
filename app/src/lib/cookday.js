@@ -263,3 +263,65 @@ export function recipesInStep(text, recipes) {
   const t = String(text).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
   return recipes.filter((r) => keyWords(r.title).some((w) => new RegExp(`\\b${w.replace(/s$/, '')}`).test(t)));
 }
+
+/* ---------------- timers ---------------- */
+const COOKING = /\b(bake|baking|roast|simmer|boil|braise|cook|rest|chill|marinate|toast|broil|steam|reduce|sear|fry|saut|crisp|brown|blanch|poach|grill|set|rise|proof|soak|cool|steep)/i;
+/** "Bake covered 400°F 15 min" → { mins: 15, maxMins: 15 }; "1 hr 15 min" → 75; "25–30 min" → 25..30. Only for cooking steps. */
+export function durationOf(text) {
+  const t = String(text);
+  if (!COOKING.test(t)) return null;
+  const re = /(?:(\d+(?:\.\d+)?)\s*(?:–|-|to)\s*)?(\d+(?:\.\d+)?)\s*(hrs?|hours?|min(?:ute)?s?)\b(?:\s*(\d+)\s*min(?:ute)?s?\b)?/i;
+  const m = t.match(re);
+  if (!m || /\bmin(?:ute)?s?\s+(?:short|less|before|early)\b|\bfrom frozen\b|\breheat|^\s*night \d|\bto serve\b/i.test(t)) return null;
+  const hrs = /^h/i.test(m[3]);
+  let hi = Number(m[2]) * (hrs ? 60 : 1) + (m[4] ? Number(m[4]) : 0);
+  let lo = m[1] ? Number(m[1]) * (hrs ? 60 : 1) + (m[4] ? Number(m[4]) : 0) : hi;
+  if (!(hi > 0) || hi > 12 * 60) return null;
+  return { mins: lo, maxMins: hi };
+}
+
+/* ---------------- matching recipe steps to the game plan ---------------- */
+const GENERIC = new Set(['the', 'and', 'with', 'into', 'for', 'until', 'add', 'stir', 'cook', 'mix', 'put', 'set', 'let', 'place', 'make', 'then', 'min', 'minute', 'over', 'from', 'off', 'each', 'half', 'rest', 'all', 'about', 'more', 'some', 'your', 'them', 'while', 'when', 'heat', 'medium', 'high', 'low', 'large', 'small', 'pan', 'pot', 'bowl', 'top', 'serve', 'serving', 'once', 'well', 'just', 'side', 'one', 'two', 'out', 'covered', 'uncovered']);
+const stem = (w) => w.replace(/(ies)$/, 'y').replace(/(ing|ed|es|s)$/, '');
+const OVEN = /\b(?:bake|baked|roast|roasted|braise|braised|broil)\b/i;
+function anyDuration(t) {
+  const m = String(t).match(/(\d+(?:\.\d+)?)\s*(hrs?|hours?|min(?:ute)?s?)\b(?:\s*(\d+)\s*min)?/i);
+  return m ? Number(m[1]) * (/^h/i.test(m[2]) ? 60 : 1) + (m[3] ? Number(m[3]) : 0) : 0;
+}
+function words(t) {
+  const extra = (OVEN.test(t) ? ['oven'] : []).concat(/\b(?:assemble|portion|pack|fill|layer|toss|combine|divide|split|jar)\b/i.test(t) ? ['assembl'] : []);
+  return new Set(extra.concat(String(t).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').split(/[^a-z]+/).filter((w) => w.length >= 3 && !GENERIC.has(w)).map(stem).filter((w) => w.length >= 3 && !GENERIC.has(w))));
+}
+export const isPrepStep = (text) => /^\s*(?:chop|cut|prep|dice|slice|wash|set up|get out|measure)\b|\b(?:chop|cut|prep) everything\b/i.test(String(text));
+
+/**
+ * Give each of a recipe's steps a place in the game plan, keeping the recipe's order.
+ * timeline: [{ text, idx }] (cooking steps only). Returns an array of timeline idx per recipe step, or null if the plan doesn't cover this recipe.
+ */
+export function alignSteps(r, timeline, others = []) {
+  const steps = r.steps || [], n = steps.length, m = timeline.length;
+  if (!n || !m) return null;
+  // words in other recipes' names (shared ingredients like "squash") count for little; this recipe's own words count a lot
+  const theirs = new Set(others.filter((o) => o.id !== r.id).flatMap((o) => keyWords(o.title).map(stem)));
+  const mine = keyWords(r.title).map(stem).filter((w) => !theirs.has(w));
+  const tw = timeline.map((t) => words(t.text)), td = timeline.map((t) => anyDuration(t.text));
+  const mention = tw.map((T) => (mine.some((w) => T.has(w)) ? 1.5 : 0));
+  const weight = (x) => (theirs.has(x) ? 0.3 : 1);
+  const sc = steps.map((s) => {
+    const w = words(s), d = anyDuration(s);
+    return tw.map((T, i) => { let c = 0; w.forEach((x) => { if (T.has(x)) c += weight(x); }); if (d && d === td[i] && d >= 10) c += 2; return c + mention[i] - i * 1e-3; });
+  });
+  let best = 0; sc.forEach((row) => row.forEach((v) => { if (v > best) best = v; }));
+  if (best < 0.9) return null;
+  // best order-keeping assignment (each step at or after the one before)
+  const dp = sc.map(() => Array(m).fill(-Infinity)), from = sc.map(() => Array(m).fill(0));
+  for (let i = 0; i < m; i++) dp[0][i] = sc[0][i];
+  for (let j = 1; j < n; j++) {
+    let bv = -Infinity, bi = 0;
+    for (let i = 0; i < m; i++) { if (dp[j - 1][i] > bv) { bv = dp[j - 1][i]; bi = i; } dp[j][i] = bv + sc[j][i]; from[j][i] = bi; }
+  }
+  let end = 0; for (let i = 1; i < m; i++) if (dp[n - 1][i] > dp[n - 1][end]) end = i;
+  const out = Array(n); out[n - 1] = end;
+  for (let j = n - 1; j > 0; j--) out[j - 1] = from[j][out[j]];
+  return out.map((i) => timeline[i].idx);
+}

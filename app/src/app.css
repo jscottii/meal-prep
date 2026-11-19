@@ -86,3 +86,4 @@ nav.tabs button.on { color: var(--accent); }
 .stepnav { position: fixed; left: 0; right: 0; bottom: calc(var(--nav) + env(safe-area-inset-bottom)); display: flex; gap: 8px; align-items: center; padding: 10px 12px; background: rgba(255, 253, 249, .97); border-top: 1px solid var(--line); z-index: 40; }
 .stepnav select { flex: 1; min-width: 0; }
 .stepnav button { flex: none; }
+.plan-step { border-left: 4px solid var(--accent); }

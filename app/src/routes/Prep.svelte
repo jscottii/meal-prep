@@ -3,8 +3,9 @@
 </script>
 
 <script>
-  import { app, portions, guideFor, loadGuide, setPrepDone, toast } from '../lib/db.svelte.js';
-  import { scaleLine, scaleStepHtml, prepLists, cookMinutes, recipesInStep } from '../lib/cookday.js';
+  import { app, portions, guideFor, loadGuide, updatePrep, toast } from '../lib/db.svelte.js';
+  import { scaleLine, scaleStepHtml, prepLists, cookMinutes, alignSteps, isPrepStep, durationOf } from '../lib/cookday.js';
+  import { unlockAudio } from '../lib/timers.js';
   let { go } = $props();
 
   const SLOTS = ['breakfast', 'lunch', 'dinner', 'snack'];
@@ -28,47 +29,86 @@
   let lists = $derived(prepLists(recipes, kOf, app.items));
   const firstWords = (t) => { const w = String(t).split(/[.;:]/)[0]; return w.length > 60 ? w.slice(0, 57) + '…' : w; };
 
-  /* ---------- the step-by-step plan ---------- */
+  /* ---------- the step-by-step plan: the game plan's own steps, with each recipe's matching steps inside ---------- */
   let steps = $derived.by(() => {
-    const out = [], used = new Set(), before = [];
+    const out = [], covered = new Set(), before = [];
     guides.forEach((g) => g.guide?.sections.forEach((s) => { if (/before you start|bare minimum/i.test(s.title)) before.push(s); }));
     out.push({ kind: 'setup', title: 'Get set up', before });
-    if (lists.knife.length) out.push({ kind: 'knife', title: 'Knife prep' });
-    if (lists.spices.length) out.push({ kind: 'spices', title: 'Measure the seasonings' });
-    guides.forEach((g) => g.guide?.sections.forEach((s, si) => {
-      if (s.kind !== 'timeline') return;
-      s.items.forEach((it, ii) => {
-        const rs = recipesInStep(`${it.label} ${it.text}`, g.mine).filter((r) => !used.has(r.id));
-        rs.forEach((r) => used.add(r.id));
-        out.push({ kind: 'time', title: it.time ? `${it.time} · ${it.label || firstWords(it.text)}` : it.label || firstWords(it.text), text: it.text, key: `t|${g.url}|${si}|${ii}`, recipes: rs });
+    const timeSteps = [];
+    guides.forEach((g) => {
+      if (!g.guide) return;
+      const items = [];
+      g.guide.sections.forEach((s, si) => s.kind === 'timeline' && s.items.forEach((it, ii) => items.push({ ...it, key: `t|${g.url}|${si}|${ii}`, text: `${it.label ? it.label + ' — ' : ''}${it.text}` })));
+      if (!items.length) return;
+      const cooking = items.map((it, idx) => ({ text: it.text, idx })).filter((x) => !isPrepStep(x.text));
+      const subs = items.map(() => []);
+      g.mine.forEach((r) => {
+        const a = alignSteps(r, cooking, recipes);
+        if (!a) return;
+        covered.add(r.id);
+        a.forEach((idx, j) => { let e = subs[idx].find((x) => x.r.id === r.id); if (!e) subs[idx].push((e = { r, js: [] })); e.js.push(j); });
       });
-    }));
-    // recipes no game plan covers: longest cook first, so the oven works while you do the rest
-    recipes.filter((r) => !used.has(r.id)).sort((a, b) => cookMinutes(b) - cookMinutes(a))
-      .forEach((r) => out.push({ kind: 'recipe', title: r.title, recipes: [r] }));
+      items.forEach((it, idx) => timeSteps.push({ kind: 'time', key: it.key, title: it.time ? `${it.time} · ${firstWords(it.text)}` : firstWords(it.text), text: it.text, subs: subs[idx], prep: isPrepStep(it.text) }));
+    });
+    // knife prep + seasonings go on the plan's "chop everything" step, or get their own steps before it
+    const chop = timeSteps.find((t) => t.prep);
+    if (chop) { chop.knife = lists.knife.length > 0; chop.spices = lists.spices.length > 0; }
+    else {
+      if (lists.knife.length) out.push({ kind: 'knife', title: 'Knife prep' });
+      if (lists.spices.length) out.push({ kind: 'spices', title: 'Measure the seasonings' });
+    }
+    out.push(...timeSteps);
+    // recipes the game plan doesn't cover: longest cook first, so the oven works while you do the rest
+    recipes.filter((r) => !covered.has(r.id)).sort((a, b) => cookMinutes(b) - cookMinutes(a))
+      .forEach((r) => out.push({ kind: 'recipe', title: r.title, subs: [{ r, js: r.steps.map((_, j) => j) }] }));
     out.push({ kind: 'pack', title: 'Pack it up' });
     return out;
   });
 
+  const subKeys = (st) => (st.subs || []).flatMap((e) => e.js.map((j) => `s|${e.r.id}|${j}`));
+  const knifeKeys = () => lists.knife.flatMap((g) => g.items.map((_, ii) => `k|${g.key}|${ii}`));
+  const spiceKeys = () => lists.spices.map((x) => `sp|${x.id}`);
   // the checkmarks that belong to a step, so it can show as done
   function stepKeys(st) {
     if (st.kind === 'setup') return lists.setup.flatMap((g, gi) => g.items.map((_, ii) => `u|${gi}|${ii}`));
-    if (st.kind === 'knife') return lists.knife.flatMap((g) => g.items.map((_, ii) => `k|${g.key}|${ii}`));
-    if (st.kind === 'spices') return lists.spices.map((s) => `sp|${s.id}`);
-    if (st.kind === 'time') return [st.key, ...st.recipes.flatMap((r) => r.steps.map((_, j) => `s|${r.id}|${j}`))];
-    if (st.kind === 'recipe') return st.recipes.flatMap((r) => r.steps.map((_, j) => `s|${r.id}|${j}`));
+    if (st.kind === 'knife') return knifeKeys();
+    if (st.kind === 'spices') return spiceKeys();
+    if (st.kind === 'time') return [st.key, ...(st.knife ? knifeKeys() : []), ...(st.spices ? spiceKeys() : []), ...subKeys(st)];
+    if (st.kind === 'recipe') return subKeys(st);
     return [];
   }
   const stepDone = (st) => { const k = stepKeys(st); return k.length > 0 && k.every((x) => done[x]); };
   let allKeys = $derived(steps.flatMap((st) => stepKeys(st)));
   let doneCount = $derived(allKeys.filter((k) => done[k]).length);
+  let firstUndone = $derived.by(() => { const i = steps.findIndex((st) => stepKeys(st).some((k) => !done[k])); return i < 0 ? steps.length - 1 : i; });
+  // which step a checkmark lives on (so ticking the last item on a step ticks the step in the overview)
+  let owner = $derived.by(() => { const m = {}; steps.forEach((st) => stepKeys(st).forEach((k) => { if (!m[k]) m[k] = st; })); return m; });
+
+  // a timer for steps that cook for a set time
+  function timerFor(key) {
+    const [kind, id, j] = key.split('|');
+    if (kind !== 's') return null;
+    const r = recipes.find((x) => x.id === id), text = r?.steps[Number(j)];
+    const d = text && durationOf(text);
+    return d ? { label: `${shortTitle(r.title)}: ${firstWords(text)}`, ...d } : null;
+  }
+  const shortTitle = (t) => String(t).split(/,|\s[–—-]\s/)[0];
 
   let mode = $state(localStorage.getItem('mp-prep-mode') || 'steps');
   let at = $state(Number(localStorage.getItem('mp-prep-step')) || 0);
+  function resume() { mode = 'steps'; at = firstUndone; window.scrollTo(0, 0); }
   $effect(() => { localStorage.setItem('mp-prep-mode', mode); localStorage.setItem('mp-prep-step', String(at)); });
   let idx = $derived(Math.min(at, steps.length - 1));
   let cur = $derived(steps[idx]);
   function move(d) { at = Math.max(0, Math.min(steps.length - 1, idx + d)); window.scrollTo(0, 0); }
+  // "Done → Next": tick everything on this step (and start timers for anything cooking), then move on
+  async function doneNext() {
+    unlockAudio();
+    const keys = stepKeys(cur).filter((k) => !done[k]), timers = {};
+    keys.forEach((k) => { const t = timerFor(k); if (t) timers[k] = t; });
+    if (keys.length) try { await updatePrep(keys, [], timers); } catch (e) { err = e.message; }
+    move(1);
+  }
 
   let loading = $state(''), err = $state('');
   async function fetchGuide(url) {
@@ -76,7 +116,17 @@
     try { await loadGuide(url); toast('✓ Cook-day plan loaded'); } catch (e) { err = e.message; }
     loading = '';
   }
-  async function tick(key, on) { try { await setPrepDone(key, on); } catch (e) { err = e.message; } }
+  async function tick(key, on) {
+    unlockAudio();
+    const t = on ? timerFor(key) : null, onKeys = on ? [key] : [], offKeys = on ? [] : [key];
+    // finishing the last item on a step ticks that step in the overview (and unticking one unticks it)
+    const st = owner[key];
+    if (st?.kind === 'time' && key !== st.key) {
+      if (on && stepKeys(st).every((k) => k === key || k === st.key || done[k])) onKeys.push(st.key);
+      if (!on && done[st.key]) offKeys.push(st.key);
+    }
+    try { await updatePrep(onKeys, offKeys, t ? { [key]: t } : {}); } catch (e) { err = e.message; }
+  }
 </script>
 
 {#snippet box(key, html, small = false)}
@@ -104,6 +154,50 @@
   </div>
 {/snippet}
 
+{#snippet knifeList()}
+  {#each lists.knife as g}
+    <div class="card">
+      <h3>🔪 {g.name}</h3>
+      <p class="small muted" style="margin:0 0 4px">{g.how}</p>
+      {#each g.items as it, ii}{@render box(`k|${g.key}|${ii}`, `<b>${esc(it.text)}</b>${it.cut ? ` — ${esc(it.cut)}` : ''} <span class="muted">· ${esc(it.recipe)}</span>${it.note ? `<br><span class="small">${esc(it.note)}</span>` : ''}${it.from ? ` <span class="pill">${it.from === 'steps' ? 'from the recipe' : 'usual prep'}</span>` : ''}`)}{/each}
+    </div>
+  {/each}
+{/snippet}
+
+{#snippet spiceList()}
+  <p class="small muted" style="margin-top:0">Measure each recipe's seasonings into its own small bowl and label it, so you just tip it in when the recipe calls for it.</p>
+  {#each lists.spices as x}
+    <div class="card">
+      {@render box(`sp|${x.id}`, `<b>${esc(x.recipe)}</b>`)}
+      <ul style="margin:0 0 4px;padding-left:50px">{#each x.items as y}<li class="small">{y}</li>{/each}</ul>
+    </div>
+  {/each}
+{/snippet}
+
+{#snippet subBlock(e)}
+  {@const r = e.r}
+  {@const k = kOf[r.id] || 1}
+  <div class="card">
+    <h3 style="margin-bottom:4px">{r.title} <span class="pill" class:acc={k !== 1}>{times(k)}</span></h3>
+    {#if r.ing.length}
+      <details open={e.js[0] === 0}>
+        <summary class="small muted">Ingredients{k !== 1 ? (k === 0.5 ? ' (already halved)' : ` (already ×${k})`) : ''}</summary>
+        <ul style="margin:4px 0 0;padding-left:18px">
+          {#each r.ing as x}{#if /:$/.test(String(x).trim())}<li class="small" style="list-style:none;margin:6px 0 0 -18px"><b>{x}</b></li>{:else}<li class="small">{scaleLine(x, k)}</li>{/if}{/each}
+        </ul>
+      </details>
+    {/if}
+    {#each e.js as j}
+      {@const d = durationOf(r.steps[j])}
+      {@render box(`s|${r.id}|${j}`, `${scaleStepHtml(r.steps[j], k)}${d ? ` <span class="pill acc">⏱ ${d.mins === d.maxMins ? d.mins : `${d.mins}–${d.maxMins}`} min timer</span>` : ''}`)}
+    {/each}
+    {#if e.js.includes(r.steps.length - 1)}
+      {#if r.fridge || r.freeze}<p class="small muted">{r.fridge ? `🧊 Fridge: ${r.fridge}` : ''}{r.fridge && r.freeze ? ' · ' : ''}{r.freeze ? `❄️ Freezer: ${r.freeze}` : ''}</p>{/if}
+      {#if r.tip}<p class="small muted">💡 {r.tip}</p>{/if}
+    {/if}
+  </div>
+{/snippet}
+
 <div class="page" style="padding-bottom:calc(var(--nav) + 90px)">
   <h1>Cook day</h1>
   {#if !recipes.length}
@@ -112,7 +206,7 @@
   {:else}
     <div class="row" style="justify-content:space-between;margin-bottom:8px">
       <div class="seg">
-        <button class:on={mode === 'steps'} onclick={() => (mode = 'steps')}>Step by step</button>
+        <button class:on={mode === 'steps'} onclick={resume}>Step by step</button>
         <button class:on={mode === 'overview'} onclick={() => (mode = 'overview')}>Overview</button>
       </div>
       <span class="small muted">{doneCount} of {allKeys.length} done</span>
@@ -141,30 +235,17 @@
           {/each}
         </div>
       {:else if cur.kind === 'knife'}
-        <p class="small muted" style="margin-top:0">Do all the cutting now, before any heat goes on. Keep each recipe's pile in its own bowl.</p>
-        {#each lists.knife as g}
-          <div class="card">
-            <h3>🔪 {g.name}</h3>
-            <p class="small muted" style="margin:0 0 4px">{g.how}</p>
-            {#each g.items as it, ii}{@render box(`k|${g.key}|${ii}`, `<b>${esc(it.text)}</b>${it.cut ? ` — ${esc(it.cut)}` : ''} <span class="muted">· ${esc(it.recipe)}</span>${it.note ? `<br><span class="small">${esc(it.note)}</span>` : ''}${it.from ? ` <span class="pill">${it.from === 'steps' ? 'from the recipe' : 'usual prep'}</span>` : ''}`)}{/each}
-          </div>
-        {/each}
+        {@render knifeList()}
       {:else if cur.kind === 'spices'}
-        <p class="small muted" style="margin-top:0">Measure each recipe's seasonings into its own small bowl and label it, so you just tip it in when the recipe calls for it.</p>
-        {#each lists.spices as s}
-          <div class="card">
-            {@render box(`sp|${s.id}`, `<b>${esc(s.recipe)}</b>`)}
-            <ul style="margin:0 0 4px;padding-left:50px">{#each s.items as x}<li class="small">{x}</li>{/each}</ul>
-          </div>
-        {/each}
+        {@render spiceList()}
       {:else if cur.kind === 'time'}
-        <div class="card">{@render box(cur.key, esc(cur.text))}</div>
-        {#if /chop|cut|prep everything|knife/i.test(cur.text) && lists.knife.length}
-          <p class="small muted">Your cutting list is in <a href="#prep" onclick={(e) => { e.preventDefault(); at = steps.findIndex((s) => s.kind === 'knife'); }}>Knife prep</a>.</p>
-        {/if}
-        {#each cur.recipes as r}{@render recipeBlock(r)}{/each}
+        <div class="card plan-step">{@render box(cur.key, esc(cur.text))}</div>
+        {#if cur.knife}<h3 style="margin:14px 0 6px">🔪 What to cut</h3>{@render knifeList()}{/if}
+        {#if cur.spices}<h3 style="margin:14px 0 6px">🥄 Measure the seasonings</h3>{@render spiceList()}{/if}
+        {#if cur.subs.length > 1}<p class="small muted">Working on {cur.subs.length} recipes at once — do these together.</p>{/if}
+        {#each cur.subs as e}{@render subBlock(e)}{/each}
       {:else if cur.kind === 'recipe'}
-        {#each cur.recipes as r}{@render recipeBlock(r)}{/each}
+        {#each cur.subs as e}{@render subBlock(e)}{/each}
       {:else if cur.kind === 'pack'}
         <div class="card">
           <p class="small" style="margin-top:0">Let hot food cool (no more than an hour on the counter) before lidding it, then fridge or freeze. Label freezer containers with the name and date.</p>
@@ -181,9 +262,10 @@
       <div class="stepnav">
         <button class="ghost" onclick={() => move(-1)} disabled={idx === 0}>← Back</button>
         <select value={idx} onchange={(e) => { at = Number(e.currentTarget.value); window.scrollTo(0, 0); }} aria-label="Jump to step">{#each steps as s, i}<option value={i}>{i + 1}. {stepDone(s) ? '✓ ' : ''}{s.title}</option>{/each}</select>
-        <button onclick={() => move(1)} disabled={idx >= steps.length - 1}>Next →</button>
+        <button onclick={doneNext}>{idx >= steps.length - 1 ? 'Done ✓' : 'Done → Next'}</button>
       </div>
     {:else}
+      <button style="width:100%;margin-bottom:10px" onclick={resume}>▶ {doneCount ? 'Pick up where you left off' : 'Start cooking'}: step {firstUndone + 1} · {steps[firstUndone]?.title}</button>
       <div class="card">
         <h3>What to make</h3>
         {#each recipes as r}

@@ -8,6 +8,7 @@
   import Receipt from './routes/Receipt.svelte';
   import Prices from './routes/Prices.svelte';
   import More from './routes/More.svelte';
+  import TimerDock from './components/TimerDock.svelte';
 
   const TABS = [['trip', '🛒', 'Trip'], ['plan', '📅', 'Week'], ['prep', '🔪', 'Prep'], ['recipes', '🍲', 'Recipes'], ['receipt', '🧾', 'Receipt'], ['prices', '🏷️', 'Prices'], ['more', '☰', 'More']];
   let page = $state((location.hash || '').slice(1) || 'trip');
@@ -23,6 +24,7 @@
 {:else if app.error && !app.household}
   <div class="page"><div class="err">⚠️ {app.error}</div><button onclick={() => location.reload()}>Try again</button></div>
 {:else}
+  <TimerDock />
   {#key page}
     {#if page === 'plan'}<Plan {go} />
     {:else if page === 'prep'}<Prep {go} />
