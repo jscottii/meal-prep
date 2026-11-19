@@ -25,7 +25,7 @@
   let missingGuides = $derived(guides.filter((g) => !g.guide && isPost(g.url)));
 
   let done = $derived(app.plan.prepDone || {});
-  let lists = $derived(prepLists(recipes, kOf));
+  let lists = $derived(prepLists(recipes, kOf, app.items));
   const firstWords = (t) => { const w = String(t).split(/[.;:]/)[0]; return w.length > 60 ? w.slice(0, 57) + '…' : w; };
 
   /* ---------- the step-by-step plan ---------- */
@@ -146,7 +146,7 @@
           <div class="card">
             <h3>🔪 {g.name}</h3>
             <p class="small muted" style="margin:0 0 4px">{g.how}</p>
-            {#each g.items as it, ii}{@render box(`k|${g.key}|${ii}`, `<b>${esc(it.text)}</b>${it.cut ? ` — ${esc(it.cut)}` : ''} <span class="muted">· ${esc(it.recipe)}</span>`)}{/each}
+            {#each g.items as it, ii}{@render box(`k|${g.key}|${ii}`, `<b>${esc(it.text)}</b>${it.cut ? ` — ${esc(it.cut)}` : ''} <span class="muted">· ${esc(it.recipe)}</span>${it.note ? `<br><span class="small">${esc(it.note)}</span>` : ''}${it.from ? ` <span class="pill">${it.from === 'steps' ? 'from the recipe' : 'usual prep'}</span>` : ''}`)}{/each}
           </div>
         {/each}
       {:else if cur.kind === 'spices'}

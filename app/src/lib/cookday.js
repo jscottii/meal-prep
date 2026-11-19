@@ -128,14 +128,84 @@ function amountPart(line) {
 const SPICE = /\b(salt|pepper(?:corns)?|cumin|paprika|chili powder|chile powder|cayenne|oregano|thyme|basil|rosemary|sage|dill|tarragon|marjoram|cinnamon|nutmeg|allspice|cloves|ginger|turmeric|curry|coriander|cardamom|garam masala|five[- ]spice|italian seasoning|herbes|za'?atar|sumac|red pepper flakes|chili flakes|bay leaf|bay leaves|fennel seeds?|mustard seeds?|dry mustard|mustard powder|garlic powder|onion powder|vanilla|baking powder|baking soda|seasoning|spice|everything bagel|old bay|cajun|taco|ranch seasoning|msg|bouillon)\b/i;
 const NOT_SPICE = /\b(fresh|chopped|leaves|sprig|bunch|bell pepper|peppers\b|jalape|red pepper\b(?! flakes)|sweet pepper|ginger root|grated ginger|frank|hot sauce|sauce)\b/i;
 
+
+/* ---------------- produce the recipe doesn't say how to cut ---------------- */
+// prep: what to do before cutting · cut: knife group · by method: roast / mash / soup / raw / saute
+const PRODUCE = [
+  { k: 'butternut', re: /\bbutternut(?: squash)?\b|\bsquash\b/i, name: 'Butternut squash', prep: 'Cut off both ends, peel with a Y-peeler, halve lengthwise and scoop out the seeds.', cut: 'cube', size: '1-inch cubes', soup: '½-inch cubes' },
+  { k: 'sweetpotato', re: /\bsweet potato(?:es)?\b|\byams?\b/i, name: 'Sweet potatoes', prep: 'Scrub (peel if you like).', cut: 'cube', size: '1-inch cubes', mash: '2-inch chunks' },
+  { k: 'potato', re: /\b(?:yukon(?: gold)?s?|russets?|red potato(?:es)?|potato(?:es)?)\b/i, name: 'Potatoes', prep: 'Scrub; peel for mash. Keep cut pieces in cold water so they don’t brown.', cut: 'cutinto', size: '1-inch chunks', mash: '2-inch chunks (same size so they cook evenly)', roast: '1-inch chunks' },
+  { k: 'onion', re: /\b(?:yellow |red |white )?onions?\b(?! powder)/i, name: 'Onion', prep: 'Halve through the root, peel, and leave the root on to hold it together.', cut: 'dice', raw: 'thin slices', roast: 'wedges' },
+  { k: 'shallot', re: /\bshallots?\b/i, name: 'Shallot', prep: 'Peel.', cut: 'mince' },
+  { k: 'garlic', re: /\bgarlic\b(?! powder)/i, name: 'Garlic', prep: 'Smash each clove with the flat of the knife; the skin slips off.', cut: 'mince' },
+  { k: 'ginger', re: /\bginger\b(?! powder|, ground)/i, name: 'Ginger', prep: 'Peel with the edge of a spoon.', cut: 'grate' },
+  { k: 'carrot', re: /\bcarrots?\b/i, name: 'Carrots', prep: 'Peel and trim the ends.', cut: 'dice', roast: '½-inch coins', raw: 'grated' },
+  { k: 'celery', re: /\bcelery\b/i, name: 'Celery', prep: 'Trim the ends; rinse.', cut: 'dice' },
+  { k: 'bellpepper', re: /\b(?:bell|sweet|red|green|yellow|orange) peppers?\b(?! flakes)|\bpoblanos?\b/i, name: 'Bell peppers', prep: 'Cut off the top, pull out the core and seeds.', cut: 'slice', soup: 'diced', saute: 'strips' },
+  { k: 'jalapeno', re: /\bjalape[nñ]os?\b/i, name: 'Jalapeños', prep: 'Halve and scrape out seeds and ribs for less heat; wash hands after.', cut: 'mince', raw: 'thin rounds' },
+  { k: 'zucchini', re: /\bzucchini\b/i, name: 'Zucchini', prep: 'Trim the ends.', cut: 'dice', roast: 'half-moons' },
+  { k: 'kale', re: /\bkale\b/i, name: 'Kale', prep: 'Pull the leaves off the stems; wash and dry.', cut: 'chop', raw: 'thin ribbons' },
+  { k: 'cabbage', re: /\b(?:green |red |purple |napa )?cabbage\b/i, name: 'Cabbage', prep: 'Quarter through the core and cut the core out. (Skip if you bought coleslaw mix.)', cut: 'thin' },
+  { k: 'broccoli', re: /\bbroccoli\b/i, name: 'Broccoli', prep: 'Cut off the thick stem.', cut: 'cutinto', size: 'bite-size florets' },
+  { k: 'cauliflower', re: /\bcauliflower\b/i, name: 'Cauliflower', prep: 'Pull off the leaves and cut out the core.', cut: 'cutinto', size: 'bite-size florets' },
+  { k: 'fennel', re: /\bfennel(?: bulbs?)?\b(?! seeds?)/i, name: 'Fennel', prep: 'Cut off the stalks (save a few fronds), halve and cut out the core.', cut: 'slice' },
+  { k: 'apple', re: /\bapples?\b(?! cider|sauce)/i, name: 'Apples', prep: 'Quarter and cut out the core (peeling is optional).', cut: 'slice', raw: 'matchsticks', soup: 'diced' },
+  { k: 'pear', re: /\bpears?\b/i, name: 'Pears', prep: 'Quarter and cut out the core.', cut: 'dice' },
+  { k: 'mushroom', re: /\bmushrooms?\b/i, name: 'Mushrooms', prep: 'Wipe clean with a damp towel; trim the stems.', cut: 'slice' },
+  { k: 'tomato', re: /\b(?:roma |cherry |grape )?tomato(?:es)?\b(?! paste| sauce|, crushed)/i, name: 'Tomatoes', prep: 'Core with a paring knife (cherry tomatoes: just halve).', cut: 'dice' },
+  { k: 'cucumber', re: /\bcucumbers?\b/i, name: 'Cucumber', prep: 'Trim the ends; peel in stripes if the skin is thick.', cut: 'dice' },
+  { k: 'greenonion', re: /\b(?:green onions?|scallions?)\b/i, name: 'Green onions', prep: 'Trim the roots.', cut: 'thin' },
+  { k: 'leek', re: /\bleeks?\b/i, name: 'Leeks', prep: 'Use the white and light green parts; halve lengthwise and rinse out the grit.', cut: 'thin' },
+  { k: 'brussels', re: /\bbrussels sprouts?\b/i, name: 'Brussels sprouts', prep: 'Trim the stem ends and pull off loose leaves.', cut: 'halve' },
+  { k: 'greenbeans', re: /\bgreen beans?\b/i, name: 'Green beans', prep: 'Snap or trim the stem ends.', cut: 'cutinto', size: '1-inch pieces' },
+  { k: 'asparagus', re: /\basparagus\b/i, name: 'Asparagus', prep: 'Snap off the woody ends.', cut: 'cutinto', size: '2-inch pieces' },
+  { k: 'eggplant', re: /\beggplants?\b/i, name: 'Eggplant', prep: 'Trim the ends.', cut: 'cube', size: '1-inch cubes' },
+  { k: 'herbs', re: /\b(?:parsley|cilantro|dill|basil|mint|chives)\b/i, name: 'Fresh herbs', prep: 'Rinse and spin or pat dry; pick the leaves (tender stems are fine).', cut: 'chop' }
+];
+const METHOD = [['mash', /\bmash/i], ['roast', /\broast|\boven|\bbake|\bsheet pan/i], ['soup', /\bsoup|\bsimmer|\bboil|\bbraise|\bstew|\bsauce\b/i], ['raw', /\bslaw|\bsalad|\btoss|\braw\b|\bgarnish|\bmassage/i], ['saute', /\bsaut|\bfry|\bbrown|\bstir|\bcook/i]];
+const STEP_CUTS = [['cube', /\bcub(?:ed|e)\b/i], ['mince', /\bminc(?:ed|e)\b/i], ['fine', /\bfinely (?:dice|diced|chop|chopped)\b/i], ['dice', /\bdic(?:ed|e)\b/i], ['thin', /\bthinly slic|\bshred(?:ded)?\b(?! chicken)/i], ['slice', /\bslic(?:ed|e)\b/i], ['chop', /\bchop(?:ped)?\b/i], ['grate', /\bgrat(?:ed|e)\b/i], ['julienne', /\bjulienn|\bmatchstick/i], ['ribbon', /\bribbon/i], ['halve', /\bhalv(?:ed|e)\b|\bquarter(?:ed)?\b/i], ['cutinto', /\b(?:cut )?into ([^,;.]*?(?:pieces|cubes|chunks|wedges|florets|strips|coins|rounds))/i]];
+const NO_KNIFE = /\bfor serving\b|\btorn\b|\bgarnish\b|\bcans?\b|\bcrushed\b|\bfrozen\b|\bcoleslaw mix\b|\bbaby spinach\b|\bpre-?cut\b|\bbagged\b|\bjarred\b|\bcanned\b|\bpaste\b|\bjuice\b(?! of)|\bdried\b/i;
+
+function sentencesWith(texts, re) { return texts.flatMap((t) => String(t).split(/(?<=[.;])\s+/)).filter((x) => re.test(x)); }
+
+/** Produce a recipe uses but never says how to cut: read the steps, else use the usual prep. */
+function inferProduce(r, kk, items, taken) {
+  const out = [];
+  const lines = (r.ing || []).map(String), linked = Object.keys(r.items || {}).map((id) => items.find((i) => i.id === id)).filter((i) => i && /produce/i.test(i.cat || ''));
+  PRODUCE.forEach((p) => {
+    if (taken.has(p.k)) return;
+    const ingHits = lines.filter((l) => p.re.test(l) && !NO_KNIFE.test(l));
+    const item = linked.find((i) => p.re.test(i.name));
+    if (!ingHits.length && !item) return;
+    if (item && !ingHits.length && NO_KNIFE.test(item.name)) return;
+    if (p.k === 'herbs' && (!ingHits.length || ingHits.every((l) => /\bsprigs?\b|\bleaves?\b,? whole/i.test(l)))) return;
+    const ctx = sentencesWith(r.steps || [], p.re);
+    const words = [...ctx, ...ingHits].join(' ');
+    let cut = '', size = '', from = 'usual';
+    for (const [key, re] of STEP_CUTS) {
+      const near = ctx.map((sn) => { const m = sn.match(new RegExp(`.{0,40}(?:${p.re.source}).{0,50}`, 'i')); return m ? m[0] : ''; }).join(' ');
+      const m = near.match(re);
+      if (m) { cut = key; size = key === 'cutinto' ? m[1].trim() : ''; from = 'steps'; break; }
+    }
+    const method = (METHOD.find(([, re]) => re.test(words)) || [''])[0];
+    if (!cut) { cut = p.cut; size = (method && p[method]) || p.size || ''; }
+    else if (!size && /cube|cutinto/.test(cut)) size = (method && p[method]) || p.size || '';
+    const amt = ingHits.find((l) => /^\s*[\d½¼¾⅓⅔⅛]/.test(l));
+    const derived = ingHits.length && ingHits.every((l) => /\b(?:half|rest|remaining|the roasted|the cooked|reserved)\b/i.test(l));
+    out.push({ k: p.k, cut, size, from, name: p.name, prep: p.prep, derived,
+      text: amt ? amountPart(scaleLine(amt, kk)) : item && item.qty ? `${item.qty} ${p.name.toLowerCase()}` : p.name });
+  });
+  return out;
+}
+
 /**
  * recipes: [{ id, title, ing:[], steps:[] }], k: { id: batches }
  * Returns { knife: [{ key, name, how, items:[{ text, cut, recipe }] }], spices: [{ recipe, items:[text] }], setup: [{ what, items:[{text, recipe}] }] }
  */
-export function prepLists(recipes, k) {
-  const knife = {}, setup = {}, spices = [];
+export function prepLists(recipes, k, items = []) {
+  const knife = {}, setup = {}, spices = [], inferred = {};
   recipes.forEach((r) => {
-    const kk = k[r.id] || 1, sp = [];
+    const kk = k[r.id] || 1, sp = [], taken = new Set();
     (r.ing || []).forEach((raw) => {
       const line = String(raw).trim();
       if (!line || /:$/.test(line) || /\bfor serving\b/i.test(line) && !/\b(?:diced|chopped|sliced|minced)\b/i.test(line)) return;
@@ -145,14 +215,29 @@ export function prepLists(recipes, k) {
       if (!combined && SPICE.test(line) && !NOT_SPICE.test(line)) { sp.push(scaled); return; }
       const cooked = /\b(chicken|pork|beef|turkey|brisket|lamb)\b/i.test(line) && /\bshredded\b/i.test(line);
       const c = cooked ? null : CUTS.find((x) => x.re.test(line));
+      if (c) PRODUCE.forEach((p) => { if (p.re.test(line)) taken.add(p.k); });
       if (c) {
         const extra = c.key === 'cutinto' ? line.match(c.re)[1] : '';
-        (knife[c.key] = knife[c.key] || { key: c.key, name: c.name, how: c.how, items: [] }).items.push({ text: c.key === 'zest' || c.key === 'juice' ? scaled : amountPart(scaled), cut: extra, recipe: r.title });
+        let txt = c.key === 'zest' || c.key === 'juice' ? scaled : amountPart(scaled);
+        if (/^[A-Za-z0-9 ]{2,24}:\s/.test(line)) { const seg = scaled.replace(/^[^:]*:\s*/, '').split(',').find((x) => c.re.test(x)); if (seg) txt = seg.trim(); }
+        (knife[c.key] = knife[c.key] || { key: c.key, name: c.name, how: c.how, items: [] }).items.push({ text: txt, cut: extra, recipe: r.title });
       }
       const s = SETUP.find((x) => x.re.test(line));
       if (s) (setup[s.what] = setup[s.what] || { what: s.what, items: [] }).items.push({ text: amountPart(scaled), recipe: r.title });
     });
     if (sp.length) spices.push({ recipe: r.title, id: r.id, items: sp });
+    // produce whose cut isn't on the ingredient line; one entry per vegetable across recipes
+    inferProduce(r, kk, items, taken).forEach((x) => {
+      const e = inferred[x.k];
+      if (!e) { inferred[x.k] = { ...x, recipes: [r.title] }; return; }
+      e.recipes.push(r.title);
+      if (e.derived && !x.derived) Object.assign(e, { ...x, recipes: e.recipes });   // keep the recipe that does the cutting
+      else if (e.from !== 'steps' && x.from === 'steps') Object.assign(e, { cut: x.cut, size: x.size, from: 'steps' });
+    });
+  });
+  Object.values(inferred).forEach((x) => {
+    const c = CUTS.find((y) => y.key === x.cut) || CUTS.find((y) => y.key === 'chop');
+    (knife[c.key] = knife[c.key] || { key: c.key, name: c.name, how: c.how, items: [] }).items.push({ text: x.text, cut: x.size, recipe: x.recipes.join(' + '), note: x.prep, from: x.from });
   });
   const order = CUTS.map((c) => c.key);
   return { knife: Object.values(knife).sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key)), spices, setup: Object.values(setup) };
