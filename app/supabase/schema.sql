@@ -515,3 +515,6 @@ drop policy if exists "read own entitlement" on entitlements;
 create policy "read own entitlement" on entitlements for select using (user_id = auth.uid());
 grant select on entitlements to authenticated;
 revoke insert, update, delete, truncate on entitlements from authenticated, anon;
+
+-- 2026-11-20d
+alter table carts add column if not exists meta jsonb not null default '{}'::jsonb;

@@ -58,7 +58,7 @@
   .timer.due { border-color: #c0392b; background: #fdecea; animation: pulse 1s infinite alternate; }
   @keyframes pulse { to { background: #f9d6d2; } }
   .tl { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .bar { height: 4px; background: #efe7dc; border-radius: 9px; margin-top: 4px; overflow: hidden; }
+  .bar { height: 4px; background: var(--tint); border-radius: 9px; margin-top: 4px; overflow: hidden; }
   .bar div { height: 100%; background: var(--accent); }
   .tt { font-variant-numeric: tabular-nums; font-size: 18px; }
   .x { background: none; color: var(--muted, #888); padding: 4px 6px; font-size: 16px; border: 0; }

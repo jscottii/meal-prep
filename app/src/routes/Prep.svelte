@@ -4,7 +4,8 @@
 
 <script>
   import { untrack } from 'svelte';
-  import { app, portions, guideFor, loadGuide, updatePrep, toast, removePantry, addPantry, patchPlan } from '../lib/db.svelte.js';
+  import { app, portions, guideFor, loadGuide, updatePrep, toast, removePantry, addPantry, patchPlan, patchCartMeta, updateCartPrep } from '../lib/db.svelte.js';
+  import { ui, openCart } from '../lib/ui.svelte.js';
   import { usedByRecipes } from '../lib/pantry.js';
   import { scaleLine, scaleStepHtml, prepLists, cookMinutes, alignSteps, isPrepStep, durationOf, equipmentFor, stepMinutes, fmtMins, scaleTime, pansOf } from '../lib/cookday.js';
   import { unlockAudio, holdAwake } from '../lib/timers.js';
@@ -13,9 +14,21 @@
   let { go } = $props();
 
   const SLOTS = ['breakfast', 'lunch', 'dinner', 'snack'];
-  let por = $derived(portions());
+  // which list you're cooking from: this week's home list, or a project cart (cooked once, big-group style)
+  let cart = $derived(ui.cart && ui.cart !== 'home' && ui.cart !== 'new' ? app.carts.find((c) => c.id === ui.cart) : null);
+  let por = $derived.by(() => {
+    if (!cart) return portions();
+    const o = {};
+    (cart.recipes || []).forEach((x) => { const r = app.recipes.find((y) => y.id === x.id); const p = Number(x.portions) || Number(cart.people) || r?.servings || 0; o[x.id] = { portions: p, scale: r?.servings ? p / r.servings : 1 }; });
+    return o;
+  });
+  // where this cook day keeps its progress and kitchen setup
+  let ctx = $derived(cart ? (cart.meta || {}) : app.plan);
+  const patchCtx = (patch) => (cart ? patchCartMeta(cart.id, patch) : patchPlan(patch));
+  const doPrep = (on, off, timers) => (cart ? updateCartPrep(cart.id, on, off, timers) : updatePrep(on, off, timers));
   // this week's recipes: on the plan, or switched on
   let recipes = $derived.by(() => {
+    if (cart) return (cart.recipes || []).map((x) => app.recipes.find((r) => r.id === x.id)).filter(Boolean);
     const onPlan = new Set(); (app.plan.days || []).forEach((d) => SLOTS.forEach((s) => d[s] && onPlan.add(d[s])));
     return app.recipes.filter((r) => onPlan.has(r.id) || r.active);
   });
@@ -29,7 +42,7 @@
   const isPost = (url) => /substack\.com\/p\//.test(url);
   let missingGuides = $derived(guides.filter((g) => !g.guide && isPost(g.url)));
 
-  let done = $derived(app.plan.prepDone || {});
+  let done = $derived(ctx.prepDone || {});
   let lists = $derived(prepLists(recipes, kOf, app.items));
   let gear = $derived(equipmentFor(recipes));
   // after cooking: what came out of the pantry
@@ -60,7 +73,7 @@
 
   // the kitchen you're cooking in decides how many pans fit at once (big groups set this up before cooking)
   const KITCHEN_DEFAULTS = { home: { ovens: 1, racks: 2, commercial: false }, commercial: { ovens: 2, racks: 6, commercial: true }, both: { ovens: 1, racks: 2, commercial: false } };
-  let setup = $derived({ ...KITCHEN_DEFAULTS[app.plan.kitchen || 'home'], ...(app.plan.kitchenSetup || {}) });
+  let setup = $derived({ ...KITCHEN_DEFAULTS[ctx.kitchen || 'home'], ...(ctx.kitchenSetup || {}) });
   const avgK = (rs) => (rs.length ? rs.reduce((a, r) => a + (kOf[r.id] || 1), 0) / rs.length : 1);
 
   /* ---------- the step-by-step plan: the game plan's own steps, with each recipe's matching steps inside ---------- */
@@ -148,12 +161,13 @@
   }
   const shortTitle = (t) => String(t).split(/,|\s[–—-]\s/)[0];
 
-  const big = $derived(app.settings.audience === 'group');
+  const big = $derived(app.settings.audience === 'group' || !!cart);
   let mode = $state(localStorage.getItem('mp-prep-mode') || (untrack(() => app.settings.audience) === 'group' ? 'steps' : 'simple'));
   $effect(() => { if (big && mode === 'simple') mode = 'steps'; if (!big && mode === 'overview') mode = 'simple'; });
   // big group: work backwards from serving time
-  let serveAt = $state(untrack(() => app.plan.serveAt) || '18:00');
-  const kitchen = $derived(app.plan.kitchen || '');
+  let serveAt = $state(untrack(() => ctx.serveAt) || '18:00');
+  $effect(() => { serveAt = ctx.serveAt || '18:00'; });
+  const kitchen = $derived(ctx.kitchen || '');
   const clock = (d) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   let starts = $derived.by(() => {
     const [h, m] = String(serveAt || '18:00').split(':').map(Number);
@@ -164,13 +178,14 @@
     steps.forEach((st, i) => { if (st.kind === 'pack') { out[i] = serve; return; } out[i] = new Date(t); t = new Date(t.getTime() + (st.mins || 0) * 60000); });
     return out;
   });
-  const ready = $derived(!!app.plan.kitchenSetup?.ready && !!app.plan.kitchen);
+  const ready = $derived(!!ctx.kitchenSetup?.ready && !!ctx.kitchen);
   let editSetup = $state(false);
-  let form = $state({ serveAt: untrack(() => app.plan.serveAt) || '18:00', kitchen: untrack(() => app.plan.kitchen) || '', ovens: untrack(() => app.plan.kitchenSetup?.ovens) || 1, racks: untrack(() => app.plan.kitchenSetup?.racks) || 2 });
+  let form = $state({ serveAt: '18:00', kitchen: '', ovens: 1, racks: 2 });
+  $effect(() => { const c = ctx; untrack(() => Object.assign(form, { serveAt: c.serveAt || '18:00', kitchen: c.kitchen || '', ovens: c.kitchenSetup?.ovens || 1, racks: c.kitchenSetup?.racks || 2 })); });
   async function saveSetup() {
     const k = form.kitchen;
     try {
-      await patchPlan({ serveAt: form.serveAt, kitchen: k, kitchenSetup: { ovens: Math.max(1, +form.ovens || 1), racks: Math.max(1, +form.racks || 1), commercial: k === 'commercial', ready: true } });
+      await patchCtx({ serveAt: form.serveAt, kitchen: k, kitchenSetup: { ovens: Math.max(1, +form.ovens || 1), racks: Math.max(1, +form.racks || 1), commercial: k === 'commercial', ready: true } });
       serveAt = form.serveAt; editSetup = false; resume();
     } catch (e) { err = e.message; }
   }
@@ -179,11 +194,13 @@
   $effect(() => { const t = setInterval(() => (now = Date.now()), 30000); return () => clearInterval(t); });
   let serveDate = $derived.by(() => { const [h, m] = String(serveAt || '18:00').split(':').map(Number); const d = new Date(now); d.setHours(h || 18, m || 0, 0, 0); return d; });
   const left = (ms) => { const m = Math.round(ms / 60000); if (m <= 0) return 'serving time!'; return fmtMins(m) + ' to serve'; };
-  function setServe(v) { serveAt = v; patchPlan({ serveAt: v }).catch(() => {}); }
-  function setKitchen(v) { patchPlan({ kitchen: v }).catch((e) => (err = e.message)); }
+  function setServe(v) { serveAt = v; patchCtx({ serveAt: v }).catch(() => {}); }
+  function setKitchen(v) { patchCtx({ kitchen: v }).catch((e) => (err = e.message)); }
   const KITCHENS = [['home', '🏠 Home kitchen'], ['commercial', '🏫 Church / commercial'], ['both', '🚗 Prep at home, serve on site']];
   let totalPortions = $derived(Object.values(por).reduce((a, x) => a + (x.portions || 0), 0));
   let at = $state(Number(localStorage.getItem('mp-prep-step')) || 0);
+  let lastSrc = untrack(() => ui.cart);
+  $effect(() => { const c = ui.cart; untrack(() => { if (c !== lastSrc) { lastSrc = c; at = firstUndone; } }); });
   function resume() { mode = 'steps'; at = firstUndone; window.scrollTo(0, 0); }
   $effect(() => { localStorage.setItem('mp-prep-mode', mode); localStorage.setItem('mp-prep-step', String(at)); });
   let idx = $derived(Math.min(at, steps.length - 1));
@@ -194,7 +211,7 @@
     unlockAudio();
     const keys = stepKeys(cur).filter((k) => !done[k]), timers = {};
     keys.forEach((k) => { const t = timerFor(k); if (t) timers[k] = t; });
-    if (keys.length) try { await updatePrep(keys, [], timers); } catch (e) { err = e.message; }
+    if (keys.length) try { await doPrep(keys, [], timers); } catch (e) { err = e.message; }
     move(1);
   }
 
@@ -213,7 +230,7 @@
       if (on && stepKeys(st).every((k) => k === key || k === st.key || done[k])) onKeys.push(st.key);
       if (!on && done[st.key]) offKeys.push(st.key);
     }
-    try { await updatePrep(onKeys, offKeys, t ? { [key]: t } : {}); } catch (e) { err = e.message; }
+    try { await doPrep(onKeys, offKeys, t ? { [key]: t } : {}); } catch (e) { err = e.message; }
   }
 </script>
 
@@ -290,9 +307,16 @@
 
 <div class="page wide" style="padding-bottom:calc(var(--nav) + 90px)">
   <h1>{!big && mode === 'simple' ? "What's for dinner" : 'Cook day'}</h1>
+  <p class="sentence small" style="margin:0 0 8px">Cooking from
+    <select class="inl" value={cart ? cart.id : 'home'} onchange={(e) => openCart(e.currentTarget.value)}>
+      <option value="home">🏠 This week's home list</option>
+      {#each app.carts as c (c.id)}<option value={c.id}>📋 {c.name}{c.people ? ` (${c.people})` : ''}</option>{/each}
+    </select>
+    {#if cart}<span class="muted"> — cooked once for {cart.people || '?'} people</span>{/if}
+  </p>
   {#if !recipes.length}
-    <p class="muted">No recipes picked for this week yet.</p>
-    <button onclick={() => go('plan')}>Plan the week</button>
+    <p class="muted">{cart ? 'This list has no recipes yet — add some from the 🛒 cart.' : 'No recipes picked for this week yet.'}</p>
+    {#if !cart}<button onclick={() => go('plan')}>Plan the week</button>{/if}
   {:else}
     <div class="row" style="justify-content:space-between;margin-bottom:8px">
       <div class="seg">
@@ -300,11 +324,13 @@
         <button class:on={mode === 'steps'} onclick={resume}>Step by step</button>
         {#if big}<button class:on={mode === 'overview'} onclick={() => (mode = 'overview')}>Overview</button>{/if}
       </div>
+      {#if big && ready && !editSetup}<button class="quiet small" onclick={() => (editSetup = true)}>⚙ Kitchen & serving time</button>{/if}
       <label class="row small" style="gap:6px;cursor:pointer" title="Stops the screen from dimming while you cook">
         <span class="switch"><input type="checkbox" bind:checked={awake} /><span></span></span> Keep screen on
       </label>
     </div>
     {#if big}
+      {#if !ready || editSetup}
       <div class="card crowd nocollapse">
         <div class="row" style="gap:16px">
           <div class="stat"><b>{totalPortions || '—'}</b><span>portions</span></div>
@@ -318,6 +344,7 @@
           <p class="small" style="margin:8px 0 0">🍽 Serving at <b>{clock(serveDate)}</b> · start by <b>{starts[0] ? clock(starts[0]) : '—'}</b> · {KITCHENS.find((x) => x[0] === kitchen)?.[1] || ''} · {setup.ovens} oven{setup.ovens === 1 ? '' : 's'}, {setup.racks} pans each <button class="quiet" onclick={() => (editSetup = true)}>Change</button></p>
         {/if}
       </div>
+      {/if}
       {#if !ready || editSetup}
         <div class="card nocollapse setupcard">
           <h3 style="margin-top:0">Before you start: your kitchen</h3>
@@ -340,7 +367,7 @@
     {:else}
     {#if mode !== 'simple'}
     <p class="small muted" style="margin:-2px 0 6px">{doneCount} of {allKeys.length} done · about {fmtMins(totalMins)} total{leftMins && leftMins < totalMins ? `, ${fmtMins(leftMins)} to go` : ''}</p>
-    <div style="height:6px;background:#efe7dc;border-radius:99px;overflow:hidden;margin-bottom:10px"><div style="height:100%;background:var(--green);width:{allKeys.length ? (doneCount / allKeys.length) * 100 : 0}%"></div></div>
+    <div style="height:6px;background:var(--tint);border-radius:99px;overflow:hidden;margin-bottom:10px"><div style="height:100%;background:var(--green);width:{allKeys.length ? (doneCount / allKeys.length) * 100 : 0}%"></div></div>
     {/if}
     {#if err}<div class="err">⚠️ {err}</div>{/if}
     {#if mode === 'simple'}

@@ -496,6 +496,26 @@ export async function loadGuide(url) {
   return g;
 }
 /** Tick a cook-day step on or off (shared with the other phone). */
+/** Cook-day progress for a project cart (kept on the cart; running timers still live on the plan so the timer dock sees them). */
+export async function patchCartMeta(id, patch) {
+  const c = app.carts.find((x) => x.id === id); if (!c) return;
+  const meta = { ...(c.meta || {}), ...patch };
+  const { error } = await sb.from('carts').update({ meta, updated_at: new Date().toISOString() }).eq('id', id);
+  if (error) fail(error);
+  c.meta = meta; app.carts = [...app.carts];
+}
+export async function updateCartPrep(id, on = [], off = [], timers = {}) {
+  const c = app.carts.find((x) => x.id === id); if (!c) return;
+  const prepDone = { ...(c.meta?.prepDone || {}) };
+  on.forEach((k) => (prepDone[k] = 1)); off.forEach((k) => delete prepDone[k]);
+  const all = { ...(app.plan.timers || {}) };
+  on.forEach((k) => { if (timers[k] && !all[k]) all[k] = { ...timers[k], start: Date.now() }; }); off.forEach((k) => delete all[k]);
+  await patchCartMeta(id, { prepDone });
+  if (Object.keys(timers).length || off.some((k) => app.plan.timers?.[k])) {
+    const plan = { ...app.plan, timers: all }; app.plan = plan;
+    await sb.from('week_plan').upsert({ household_id: app.household, data: plan, updated_at: new Date().toISOString() });
+  }
+}
 export async function setPrepDone(key, on, timer) {
   return updatePrep(on ? [key] : [], on ? [] : [key], timer ? { [key]: timer } : {});
 }

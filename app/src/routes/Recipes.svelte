@@ -1,6 +1,8 @@
 <script>
   import { app, portions, itemById, setRecipeActive, saveRecipe, deleteRecipe, importRecipeUrl, toast } from '../lib/db.svelte.js';
   import FindRecipes from '../components/FindRecipes.svelte';
+  import Onboarding from '../components/Onboarding.svelte';
+  let starter = $state(false);
   let { go } = $props();
   let adding = $state(false), link = $state(''), linkBusy = $state(false), linkErr = $state(''), finding = $state(false);
   async function fromLink(e) { e.preventDefault(); linkBusy = true; linkErr = ''; try { const [r] = await importRecipeUrl(link.trim()); link = ''; adding = false; open = r.id; toast(`✓ ${r.title} saved`); } catch (x) { linkErr = x.message; } linkBusy = false; }
@@ -69,10 +71,11 @@
         </form>
         {#if linkErr}<div class="err small">⚠️ {linkErr}</div>{/if}
         <p class="small muted" style="margin:8px 0">The app pulls in the ingredients, steps and shopping items for you.</p>
-        <div class="row"><button class="ghost" onclick={() => { adding = false; edit(null); }}>✏️ Type one in</button><button class="ghost" onclick={() => { adding = false; finding = true; }}>🔎 Find recipes</button></div>
+        <div class="row"><button class="ghost" onclick={() => { adding = false; edit(null); }}>✏️ Type one in</button><button class="ghost" onclick={() => { adding = false; finding = true; }}>🔎 Find recipes</button><button class="ghost" onclick={() => { adding = false; starter = true; }}>✨ 15 meals from my favorite cuisines</button></div>
       </div>
     {/if}
     {#if finding}<FindRecipes onclose={() => (finding = false)} />{/if}
+    {#if starter}<Onboarding {go} onclose={() => (starter = false)} />{/if}
     <input placeholder="Search saved recipes" bind:value={q} style="margin:6px 0" />
     <div class="card">
       {#each list as r}

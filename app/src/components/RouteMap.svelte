@@ -12,7 +12,7 @@
     }
     map.eachLayer((l) => { if (!(l instanceof L.TileLayer)) map.removeLayer(l); });
     const pts = line.pts || [];
-    if (line.coords) L.polyline(line.coords.map(([lng, lat]) => [lat, lng]), { color: '#b5541c', weight: 5, opacity: 0.85 }).addTo(map);
+    if (line.coords) L.polyline(line.coords.map(([lng, lat]) => [lat, lng]), { color: '#1f5fd1', weight: 5, opacity: 0.85 }).addTo(map);
     pts.forEach((p, i) => {
       const last = i === pts.length - 1, first = i === 0;
       const txt = last ? 'H' : first ? 'S' : String(i);

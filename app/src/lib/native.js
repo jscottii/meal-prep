@@ -48,6 +48,6 @@ export async function tap() {
 /** Match the status bar to the app, and hide the splash once the app has drawn. */
 export async function nativeStart() {
   if (!isNative()) return;
-  try { const { StatusBar, Style } = await import('@capacitor/status-bar'); await StatusBar.setStyle({ style: Style.Light }); if (platform() === 'android') await StatusBar.setBackgroundColor({ color: '#f7f3ec' }); } catch {}
+  try { const { StatusBar, Style } = await import('@capacitor/status-bar'); await StatusBar.setStyle({ style: Style.Light }); if (platform() === 'android') await StatusBar.setBackgroundColor({ color: '#f6f4ee' }); } catch {}
   try { const { SplashScreen } = await import('@capacitor/splash-screen'); await SplashScreen.hide(); } catch {}
 }
