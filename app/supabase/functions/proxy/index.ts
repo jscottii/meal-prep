@@ -4,6 +4,7 @@
 //   serp-account          check the household's SerpApi key (free)
 //   serp-search {q, location}  one Google Shopping search (counts toward the monthly cap)
 //   serp-location {city, state} SerpApi's canonical location name
+//   delete-account {confirm:'DELETE'}  delete your sign-in; the household's data too if you're its last member
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const CORS = {
@@ -26,6 +27,23 @@ Deno.serve(async (req) => {
     if (!mem) return json({ error: 'No household yet.' }, 403);
     const hid = mem.household_id;
     const body = await req.json().catch(() => ({}));
+
+    if (body.action === 'delete-account') {
+      if (body.confirm !== 'DELETE') return json({ error: 'Type DELETE to confirm.' }, 400);
+      await admin.from('members').delete().eq('user_id', u.user.id);
+      const { count } = await admin.from('members').select('user_id', { count: 'exact', head: true }).eq('household_id', hid);
+      let householdDeleted = false;
+      if (!count) {
+        // last one out: remove the household and everything in it (recipes, plans, prices, pantry, receipts, key)
+        const { error: he } = await admin.from('households').delete().eq('id', hid);
+        if (he) return json({ error: he.message }, 500);
+        householdDeleted = true;
+      }
+      await admin.from('invites').delete().eq('invited_by', u.user.id);
+      const { error: de } = await admin.auth.admin.deleteUser(u.user.id);
+      if (de) return json({ error: de.message }, 500);
+      return json({ ok: true, householdDeleted });
+    }
 
     if (body.action === 'bm-archive') {
       const r = await fetch(`${BM}/api/v1/archive?sort=new&limit=30`, { headers: { 'User-Agent': 'Mozilla/5.0' } });

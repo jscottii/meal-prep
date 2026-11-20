@@ -4,6 +4,7 @@
   let hideInstall = $state(localStorage.getItem('mp-hide-install') === '1' || matchMedia('(min-width: 900px)').matches);
   import { app, need, portions, itemById, setHave, toast, owned, updatePantry } from '../lib/db.svelte.js';
   import { covers } from '../lib/pantry.js';
+  import { shareText, tap } from '../lib/native.js';
   import { trip, planTrip, chosen, drawLine, useMyLocation, startAddress } from '../lib/trip.svelte.js';
   import { directionsUrl } from '../lib/maps.js';
   import RouteMap from '../components/RouteMap.svelte';
@@ -25,7 +26,18 @@
   $effect(() => { if (app.ready && app.household && !trip.result && !trip.busy && !trip.error && left) planTrip(); });
 
   async function tick(it, storeId) {
+    tap();
     try { await setHave([it.id], true, storeId, { [it.id]: it.price }); toast(`✓ ${it.name}`); } catch (e) { toast(e.message); }
+  }
+  async function shareList() {
+    const lines = ['🛒 Shopping list'];
+    plan.stores.forEach((st) => {
+      const left = st.items.filter((it) => !itemById(it.id)?.have);
+      if (!left.length) return;
+      lines.push('', `${byId[st.id]?.short || st.name}:`);
+      left.forEach((it) => lines.push(`☐ ${it.name}${itemById(it.id)?.qty ? ' — ' + itemById(it.id).qty : ''}`));
+    });
+    try { if ((await shareText('Shopping list', lines.join('\n'))) === 'copied') toast('✓ List copied'); } catch (e) { toast(e.message); }
   }
   async function untick(id) { try { await setHave([id], false); } catch (e) { toast(e.message); } }
   async function here() { try { await useMyLocation(); trip.result = null; planTrip(); } catch (e) { trip.error = e.message; } }
@@ -65,7 +77,8 @@
   {:else if plan}
     <div class="hero">
       <div class="spread"><div><div class="muted small">Best trip · {plan.stores.length} stop{plan.stores.length === 1 ? '' : 's'}</div><div class="big">{fmt(plan.total)}</div><div class="small muted">all-in: groceries + gas + your time</div></div>
-        <a class="btn" href={mapsLink} target="_blank" rel="noopener">Directions ↗</a></div>
+        <a class="btn" href={mapsLink} target="_blank" rel="noopener">Directions ↗</a>
+        <button class="ghost" onclick={shareList}>Share list</button></div>
       <div class="row" style="margin-top:12px">
         <div class="stat"><b>{fmt(plan.groceries)}</b><span>groceries</span></div>
         <div class="stat"><b>{plan.driveMin + plan.stopMin} min</b><span>{plan.driveMin} driving</span></div>

@@ -2,11 +2,14 @@ import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { VitePWA } from 'vite-plugin-pwa';
 
-export default defineConfig({
-  base: '/meal-prep/',
+// `vite build --mode native` makes the copy that ships inside the iPhone/Android app (no service worker, relative paths)
+export default defineConfig(({ mode }) => ({
+  base: mode === 'native' ? './' : '/meal-prep/',
+  build: mode === 'native' ? { outDir: 'dist-native' } : {},
+  define: { __NATIVE__: JSON.stringify(mode === 'native') },
   plugins: [
     svelte(),
-    VitePWA({
+    mode !== 'native' && VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg', 'apple-touch-icon.png'],
       manifest: {
@@ -25,5 +28,5 @@ export default defineConfig({
         runtimeCaching: [{ urlPattern: /^https:\/\/[abc]\.tile\.openstreetmap\.org\//, handler: 'CacheFirst', options: { cacheName: 'map-tiles', expiration: { maxEntries: 400, maxAgeSeconds: 30 * 864e2 } } }]
       }
     })
-  ]
-});
+  ].filter(Boolean)
+}));

@@ -2,7 +2,7 @@
 export const install = $state({ prompt: null, installed: false });
 
 const standalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-install.installed = standalone();
+install.installed = standalone() || !!window.Capacitor?.isNativePlatform?.();
 addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); install.prompt = e; });
 addEventListener('appinstalled', () => { install.installed = true; install.prompt = null; });
 

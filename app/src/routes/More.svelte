@@ -1,8 +1,13 @@
 <script>
   import InstallApp from '../components/InstallApp.svelte';
-  import { app, saveSettings, saveSerpKey, testSerpKey, invite, signOut, saveStore, toast } from '../lib/db.svelte.js';
+  import { app, saveSettings, saveSerpKey, testSerpKey, invite, signOut, deleteAccount, saveStore, toast } from '../lib/db.svelte.js';
   import { trip } from '../lib/trip.svelte.js';
   let { go } = $props();
+  let delAsk = $state(false), delWord = $state(''), delBusy = $state(false), delErr = $state('');
+  async function reallyDelete() {
+    delBusy = true; delErr = '';
+    try { await deleteAccount(); location.hash = ''; location.reload(); } catch (e) { delErr = e.message; delBusy = false; }
+  }
   let tab = $state('history');
   let s = $state({ ...app.settings }), saving = $state(false);
   let key = $state(''), keyBusy = $state(false), keyMsg = $state(null);
@@ -106,5 +111,20 @@
       <p class="small muted">Then send her the app link. She signs in with that email and sees the same list, live.</p>
       <button class="ghost" style="margin-top:10px" onclick={signOut}>Sign out</button>
     </div>
+    <div class="card">
+      <h3>Delete my account</h3>
+      <p class="small muted">Deletes your sign-in. If you're the only one in your household, it also deletes everything: recipes, plans, prices, pantry, receipts and your SerpApi key. This can't be undone.</p>
+      {#if !delAsk}
+        <button class="ghost" style="color:var(--red);border-color:var(--red)" onclick={() => (delAsk = true)}>Delete my account…</button>
+      {:else}
+        <label class="f">Type DELETE to confirm<input bind:value={delWord} autocapitalize="characters" /></label>
+        <div class="row">
+          <button class="danger" disabled={delWord.trim() !== 'DELETE' || delBusy} onclick={reallyDelete}>{#if delBusy}<span class="spinner"></span>{/if} Delete forever</button>
+          <button class="quiet" onclick={() => { delAsk = false; delWord = ''; }}>Cancel</button>
+        </div>
+        {#if delErr}<div class="err">⚠️ {delErr}</div>{/if}
+      {/if}
+    </div>
   {/if}
+  <p class="small muted" style="text-align:center;margin-top:20px"><a href="https://jscottii.github.io/meal-prep/privacy.html" target="_blank" rel="noopener">Privacy policy</a> · <a href="https://jscottii.github.io/meal-prep/support.html" target="_blank" rel="noopener">Help &amp; support</a></p>
 </div>

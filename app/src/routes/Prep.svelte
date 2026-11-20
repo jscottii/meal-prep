@@ -8,6 +8,7 @@
   import { usedByRecipes } from '../lib/pantry.js';
   import { scaleLine, scaleStepHtml, prepLists, cookMinutes, alignSteps, isPrepStep, durationOf, equipmentFor } from '../lib/cookday.js';
   import { unlockAudio, holdAwake } from '../lib/timers.js';
+  import { tap } from '../lib/native.js';
   let { go } = $props();
 
   const SLOTS = ['breakfast', 'lunch', 'dinner', 'snack'];
@@ -144,7 +145,7 @@
     loading = '';
   }
   async function tick(key, on) {
-    unlockAudio();
+    unlockAudio(); if (on) tap();
     const t = on ? timerFor(key) : null, onKeys = on ? [key] : [], offKeys = on ? [] : [key];
     // finishing the last item on a step ticks that step in the overview (and unticking one unticks it)
     const st = owner[key];

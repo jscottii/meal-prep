@@ -67,6 +67,13 @@ export async function signUp(email, password) {
   if (error) throw new Error(authMsg(error.message));
   if (!data.session) throw new Error('Account made, but email confirmation is still on in Supabase.');
 }
+/** Delete this sign-in (and the household's data if you're its last member). */
+export async function deleteAccount() {
+  const r = await callProxy({ action: 'delete-account', confirm: 'DELETE' });
+  await sb.auth.signOut().catch(() => {});
+  try { Object.keys(localStorage).filter((k) => k.startsWith('mp-') || k.startsWith('sb-')).forEach((k) => localStorage.removeItem(k)); } catch {}
+  return r;
+}
 export async function signOut() { await sb.auth.signOut(); location.reload(); }
 
 export async function start() {

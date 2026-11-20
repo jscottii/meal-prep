@@ -1,6 +1,7 @@
 <script>
   import { app, clearTimer } from '../lib/db.svelte.js';
   import { alarm, keepAwake } from '../lib/timers.js';
+  import { scheduleTimer, cancelTimer, isNative } from '../lib/native.js';
   let now = $state(Date.now());
   let list = $derived(Object.entries(app.plan.timers || {}).map(([key, t]) => {
     const end = t.start + t.mins * 60000, left = Math.round((end - now) / 1000);
@@ -12,6 +13,14 @@
     return () => clearInterval(id);
   });
   $effect(() => { keepAwake(list.length > 0); });
+  // phone app: a real notification for each running timer (rings with the screen locked); stopped timers are cancelled
+  let scheduled = new Set();
+  $effect(() => {
+    if (!isNative()) return;
+    const live = new Set();
+    Object.entries(app.plan.timers || {}).forEach(([key, t]) => { const id = key + '@' + t.start; live.add(id); if (!scheduled.has(id)) { scheduled.add(id); scheduleTimer(key, t.label, t.start + t.mins * 60000); } });
+    [...scheduled].forEach((id) => { if (!live.has(id)) { scheduled.delete(id); cancelTimer(id.split('@')[0]); } });
+  });
   $effect(() => {
     list.forEach((t) => {
       const id = t.key + '@' + t.start;

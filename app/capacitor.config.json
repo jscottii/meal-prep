@@ -1,0 +1,12 @@
+{
+  "appId": "com.jscottii.mealprep",
+  "appName": "Meal Prep Shopper",
+  "webDir": "dist-native",
+  "backgroundColor": "#f7f3ec",
+  "ios": { "contentInset": "never", "scheme": "Meal Prep Shopper" },
+  "android": { "backgroundColor": "#f7f3ec" },
+  "plugins": {
+    "SplashScreen": { "launchShowDuration": 600, "backgroundColor": "#f7f3ec", "showSpinner": false },
+    "LocalNotifications": { "smallIcon": "ic_stat_icon", "iconColor": "#b5541c" }
+  }
+}

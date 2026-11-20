@@ -1,4 +1,5 @@
 // Cook-day timer alerts: sound, vibration, notification, and keeping the screen awake.
+import { nativeAwake, isNative } from './native.js';
 let ctx = null, lock = null;
 
 /** Call from a tap so iPhone allows sound later. */
@@ -25,6 +26,7 @@ export function alarm(label) {
 
 /** Keep the screen on while timers run (cook day). */
 export async function keepAwake(on) {
+  if (await nativeAwake(on)) return;
   try {
     if (on && !lock && 'wakeLock' in navigator) { lock = await navigator.wakeLock.request('screen'); lock.addEventListener('release', () => (lock = null)); }
     if (!on && lock) { await lock.release(); lock = null; }
@@ -33,6 +35,7 @@ export async function keepAwake(on) {
 
 /** Hold the screen awake until the returned function is called; re-takes the lock when you come back to the app. */
 export function holdAwake() {
+  if (isNative()) { nativeAwake(true); return () => nativeAwake(false); }
   let l = null, live = true;
   const take = async () => { try { if (live && document.visibilityState === 'visible' && 'wakeLock' in navigator && !l) { l = await navigator.wakeLock.request('screen'); l.addEventListener('release', () => (l = null)); } } catch {} };
   const vis = () => take();
