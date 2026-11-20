@@ -1,5 +1,5 @@
 // Trip planning: nearest stores + drive times (free maps) → optimizer → route line.
-import { app, need, toast } from './db.svelte.js';
+import { app, need, toast, owned } from './db.svelte.js';
 import { nearestAndMatrix, routeLine, geocode } from './maps.js';
 import { planTrips } from './optimizer.js';
 import { scalePrices } from './planner.js';
@@ -27,7 +27,7 @@ export async function planTrip() {
   trip.busy = true; trip.error = ''; trip.step = 'Starting…';
   try {
     const s = app.settings, n = need();
-    const items = app.items.filter((i) => n[i.id] > 0 && !i.have);
+    const items = app.items.filter((i) => n[i.id] > 0 && !owned(i));
     if (!items.length) { trip.result = { empty: true }; return; }
     const enabled = (Array.isArray(s.enabledStores) ? s.enabledStores : String(s.enabledStores || '').split(',')).map((x) => x.trim()).filter(Boolean);
     const stores = app.stores.filter((st) => st.enabled !== false && enabled.includes(st.id) && (!st.bulk || s.costcoMember));
@@ -46,7 +46,7 @@ export async function planTrip() {
         costcoMember: !!s.costcoMember, costcoMode: s.costcoMode, enabled: nm.stores.map((x) => x.id) },
       start, end: home });
     res.itemCount = items.length;
-    res.alreadyHave = app.items.filter((i) => n[i.id] > 0 && i.have).map((i) => i.id);
+    res.alreadyHave = app.items.filter((i) => n[i.id] > 0 && owned(i)).map((i) => i.id);
     trip.result = res; trip.choice = 'best'; trip.when = Date.now();
     await drawLine();
   } catch (e) {

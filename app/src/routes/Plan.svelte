@@ -1,5 +1,6 @@
 <script>
-  import { app, itemById, recipeById, savePlan, listBareMinimum, importBareMinimum, toast } from '../lib/db.svelte.js';
+  import { app, itemById, recipeById, savePlan, listBareMinimum, importBareMinimum, toast, owned } from '../lib/db.svelte.js';
+  import { rankByPantry, daysLeft } from '../lib/pantry.js';
   import { trip, planTrip } from '../lib/trip.svelte.js';
   let { go } = $props();
 
@@ -34,12 +35,18 @@
   let por = $derived.by(() => { const o = {}; days.forEach((d) => SLOTS.forEach((s) => d[s] && (o[d[s]] = (o[d[s]] || 0) + (Number(d.people) || 0)))); return o; });
   let similar = $derived.by(() => {
     const pool = new Set(); picked.forEach((r) => Object.keys(r.items).forEach((i) => pool.add(i)));
-    app.items.forEach((i) => i.have && pool.add(i.id));
+    app.items.forEach((i) => owned(i) && pool.add(i.id));
     return app.recipes.filter((r) => !sel[r.id] && Object.keys(r.items).length).map((r) => {
       const ids = Object.keys(r.items), shared = ids.filter((i) => pool.has(i));
       return { r, shared, total: ids.length, score: shared.length / ids.length + shared.length * 0.02 };
     }).sort((a, b) => b.score - a.score).slice(0, 10);
   });
+
+  // recipes ranked by what's already in the pantry
+  const priceOf = (id) => { const row = app.prices[id] || {}; const v = Object.values(row).map((e) => e?.price).filter((x) => x > 0); return v.length ? Math.min(...v) : 0; };
+  let fromPantry = $derived(app.pantry.length ? rankByPantry(app.recipes, app.pantry, app.items, priceOf).slice(0, 8) : []);
+  let useSoon = $derived(app.pantry.filter((p) => { const d = daysLeft(p.use_by); return d != null && d <= 3; }));
+  let showPantry = $state(true);
 
   async function loadPosts() { loading = true; err = ''; try { posts = await listBareMinimum(); } catch (e) { err = e.message; } loading = false; }
   async function bring(p, use) {
@@ -76,6 +83,29 @@
   <p class="muted">Pick recipes, say who's eating when, and the shopping list and trip rebuild to match.</p>
   {#if err}<div class="err">⚠️ {err}</div>{/if}
   {#if msg}<div class="ok">{msg}</div>{/if}
+
+  <div class="card">
+    <div class="spread"><h3 style="margin:0">🥫 Cook from your pantry</h3>{#if fromPantry.length}<button class="quiet" onclick={() => (showPantry = !showPantry)}>{showPantry ? 'Hide' : 'Show'}</button>{/if}</div>
+    {#if !app.pantry.length}
+      <p class="small muted">Add what you already have and this ranks recipes by what they use up, so you only buy the gap. <button class="quiet" onclick={() => go('pantry')}>Fill your pantry →</button></p>
+    {:else if !fromPantry.length}
+      <p class="small muted">None of your recipes use what's in your pantry yet. Bring in a new week below, then check back. <button class="quiet" onclick={() => go('pantry')}>Pantry →</button></p>
+    {:else if showPantry}
+      {#if useSoon.length}<p class="small" style="margin:6px 0">⏳ Use soon: <b>{useSoon.map((p) => p.name).join(', ')}</b></p>{/if}
+      {#each fromPantry as x}
+        <div class="list-row">
+          <div class="grow">
+            <b>{x.r.title}</b> <span class="pill" class:live={x.share >= 0.5}>{Math.round(x.share * 100)}% on hand</span>
+            {#each x.useUp as u}<span class="pill acc" style="margin-left:4px">uses up {u.toLowerCase()}</span>{/each}
+            <div class="small muted">Have: {x.got.join(', ')}</div>
+            {#if x.need.length}<div class="small muted">Buy: {x.need.slice(0, 5).join(', ')}{x.need.length > 5 ? ` +${x.need.length - 5} more` : ''}</div>{/if}
+          </div>
+          <button class={sel[x.r.id] ? 'ghost' : ''} onclick={() => { toggle(x.r.id); if (sel[x.r.id]) days = autoFill(picked, household); }}>{sel[x.r.id] ? '✓ Added' : 'Add'}</button>
+        </div>
+      {/each}
+      <p class="small muted" style="margin-bottom:0">Ranked by how much of each recipe you already have (by cost), plus anything about to go bad.</p>
+    {/if}
+  </div>
 
   <div class="card">
     <h3>1 · New from <i>the bare minimum</i></h3>

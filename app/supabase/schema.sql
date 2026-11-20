@@ -217,3 +217,25 @@ grant execute on function my_household(), ensure_household(), has_serp_key(), se
 -- TRUNCATE ignores row level security, so nobody but the owner gets it
 revoke truncate, trigger, references on all tables in schema public from authenticated, anon;
 alter default privileges in schema public revoke truncate, trigger, references on tables from authenticated, anon;
+
+-- ---------------- pantry: what's on hand ----------------
+create table if not exists pantry (
+  id uuid primary key default gen_random_uuid(),
+  household_id uuid not null references households on delete cascade default my_household(),
+  item_id text,
+  name text not null,
+  amount text,
+  level text not null default 'plenty',
+  place text not null default 'pantry',
+  added_on date not null default current_date,
+  use_by date
+);
+create index if not exists pantry_household on pantry(household_id);
+alter table pantry enable row level security;
+drop policy if exists "household rows" on pantry;
+create policy "household rows" on pantry for all using (household_id = my_household()) with check (household_id = my_household());
+grant select, insert, update, delete on pantry to authenticated;
+alter table pantry replica identity full;
+do $$ begin
+  alter publication supabase_realtime add table pantry;
+exception when duplicate_object then null; end $$;

@@ -3,7 +3,9 @@
 </script>
 
 <script>
-  import { app, portions, guideFor, loadGuide, updatePrep, toast } from '../lib/db.svelte.js';
+  import { untrack } from 'svelte';
+  import { app, portions, guideFor, loadGuide, updatePrep, toast, removePantry, addPantry } from '../lib/db.svelte.js';
+  import { usedByRecipes } from '../lib/pantry.js';
   import { scaleLine, scaleStepHtml, prepLists, cookMinutes, alignSteps, isPrepStep, durationOf, equipmentFor } from '../lib/cookday.js';
   import { unlockAudio, holdAwake } from '../lib/timers.js';
   let { go } = $props();
@@ -28,6 +30,21 @@
   let done = $derived(app.plan.prepDone || {});
   let lists = $derived(prepLists(recipes, kOf, app.items));
   let gear = $derived(equipmentFor(recipes));
+  // after cooking: what came out of the pantry
+  let used = $derived(usedByRecipes(recipes, app.pantry, app.items));
+  let usedSel = $state({});
+  let pantryDone = $state(false);
+  $effect(() => { const prev = untrack(() => usedSel), m = {}; used.forEach((u) => (m[u.p.id] = prev[u.p.id] ?? u.usedUp)); usedSel = m; });
+  async function updatePantryAfterCooking() {
+    const ids = used.filter((u) => usedSel[u.p.id]).map((u) => u.p.id);
+    try {
+      if (ids.length) await removePantry(ids);
+      // the cooked meals themselves go in, so the Pantry shows what's ready to eat
+      await addPantry(recipes.map((r) => ({ name: `${shortTitle(r.title)} (cooked)`, amount: '', place: /yes/i.test(r.freeze || '') && /freez/i.test(r.title + r.ing.join(' ')) ? 'freezer' : 'fridge', use_by: fridgeDays(r) })));
+      pantryDone = true; toast(`✓ Pantry updated: ${ids.length} used up, ${recipes.length} meals added`);
+    } catch (e) { err = e.message; }
+  }
+  const fridgeDays = (r) => { const m = String(r.fridge || '').match(/(\d+)(?:\s*[–-]\s*(\d+))?\s*day/i); if (!m) return null; const d = new Date(); d.setDate(d.getDate() + Number(m[1])); return d.toISOString().slice(0, 10); };
 
   // keep the screen on while this tab is open (your choice, remembered on this device)
   let awake = $state(localStorage.getItem('mp-awake') !== '0');
@@ -270,6 +287,16 @@
           {#each recipes as r}
             <div class="list-row"><div class="grow"><b class="small">{r.title}</b><div class="small muted">{r.fridge ? `🧊 Fridge: ${r.fridge}` : '🧊 Fridge'}{r.freeze ? ` · ❄️ Freezer: ${r.freeze}` : ''}</div></div></div>
           {/each}
+          <h3 style="margin-top:14px">🥫 Update your pantry</h3>
+          {#if pantryDone}
+            <p class="ok small">✓ Done. The cooked meals are in your Pantry with their fridge dates.</p>
+          {:else}
+            <p class="small muted" style="margin:0 0 4px">Checked = used up today. Staples (spices, oil, freezer items) stay unless you check them.</p>
+            {#each used as u}
+              <label class="check"><input type="checkbox" bind:checked={usedSel[u.p.id]} /><span class="small">{u.p.name}</span></label>
+            {/each}
+            <button style="margin-top:8px" onclick={updatePantryAfterCooking}>Update pantry{used.length ? ` (${used.filter((u) => usedSel[u.p.id]).length} used up)` : ''}</button>
+          {/if}
           {#each guides as g}{#each g.guide?.sections || [] as s}{#if /where it all goes|freeze|storage/i.test(s.title)}
             <h3 style="margin-top:12px">{s.title}</h3>
             <ul style="margin:0;padding-left:18px">{#each s.items as it}<li class="small" style="margin:4px 0">{#if it.label}<b>{it.label}</b> — {/if}{it.text}</li>{/each}</ul>

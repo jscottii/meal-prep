@@ -2,7 +2,8 @@
   import InstallApp from '../components/InstallApp.svelte';
   import { install } from '../lib/install.svelte.js';
   let hideInstall = $state(localStorage.getItem('mp-hide-install') === '1' || matchMedia('(min-width: 900px)').matches);
-  import { app, need, portions, itemById, setHave, toast } from '../lib/db.svelte.js';
+  import { app, need, portions, itemById, setHave, toast, owned, updatePantry } from '../lib/db.svelte.js';
+  import { covers } from '../lib/pantry.js';
   import { trip, planTrip, chosen, drawLine, useMyLocation, startAddress } from '../lib/trip.svelte.js';
   import { directionsUrl } from '../lib/maps.js';
   import RouteMap from '../components/RouteMap.svelte';
@@ -14,7 +15,9 @@
   let por = $derived(portions());
   let active = $derived(app.recipes.filter((r) => r.active));
   let bought = $derived(app.items.filter((i) => n[i.id] && i.have));
-  let left = $derived(app.items.filter((i) => n[i.id] && !i.have).length);
+  let left = $derived(app.items.filter((i) => n[i.id] && !owned(i)).length);
+  let fromPantry = $derived(app.items.filter((i) => n[i.id] && !i.have && covers(app.pantry, i.id)));
+  async function buyAnyway(i) { const p = app.pantry.find((x) => x.item_id === i.id); if (p) { await updatePantry(p.id, { level: 'low' }); trip.result = null; planTrip(); } }
   let byId = $derived(Object.fromEntries(trip.stores.map((s) => [s.id, s])));
   let unpriced = $derived(plan ? plan.stores.reduce((a, s) => a + s.items.filter((i) => i.source === 'unpriced').length, 0) : 0);
   let mapsLink = $derived(plan ? directionsUrl(startAddress(), app.settings.homeAddress, plan.stores.map((s) => byId[s.id]).filter(Boolean)) : '');
@@ -98,6 +101,12 @@
     <p class="small muted">Compared {trip.result.considered} store combinations. <button class="quiet" onclick={planTrip}>↻ Re-plan</button></p>
   {/if}
 
+  {#if fromPantry.length}
+    <div class="card"><h3>🥫 Skipping — already in your pantry ({fromPantry.length})</h3>
+      {#each fromPantry as b}<div class="list-row"><span>{b.name}</span><button class="quiet" onclick={() => buyAnyway(b)}>Buy anyway</button></div>{/each}
+      <p class="small muted" style="margin-bottom:0">Running low? "Buy anyway" marks it low in your pantry and adds it back to the trip.</p>
+    </div>
+  {/if}
   {#if bought.length}
     <div class="card"><h3>Already bought ({bought.length})</h3>
       {#each bought as b}<div class="list-row"><span>{b.name} <span class="small muted">{b.haveOn}</span></span><button class="quiet" onclick={() => untick(b.id)}>Undo</button></div>{/each}

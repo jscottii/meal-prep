@@ -41,6 +41,7 @@
   <div class="seg" style="margin:6px 0 4px">
     {#each [['history', 'History'], ['stores', 'Stores'], ['settings', 'Settings']] as [k, l]}<button class:on={tab === k} onclick={() => (tab = k)}>{l}</button>{/each}
   </div>
+  <button class="ghost" style="margin:6px 0 0 6px" onclick={() => go('prices')}>🏷️ Prices</button>
 
   {#if tab === 'history'}
     <h1>What you've bought</h1>

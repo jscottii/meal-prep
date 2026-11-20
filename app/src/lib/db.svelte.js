@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { SUPABASE_URL, SUPABASE_ANON_KEY, APP_URL } from './config.js';
 import { STORES_SEED, ITEMS_SEED, RECIPES, RECIPE_SERVINGS_SEED, RECIPE_ITEMS_SEED, HOME_DEFAULT, PANTRY_CHECK, SOURCE_URL, TIMELINE, STORAGE } from './seed.js';
 import { neededUnits, planPortions, parseBareMinimum, buildImport, parsePrepGuide } from './planner.js';
+import { placeFor, useByFor, covers } from './pantry.js';
 import { NOT_FOUND_DAYS, RECEIPT_FRESH_DAYS } from './receipts.js';
 import { titleMatches_ } from './optimizer.js';
 
@@ -14,7 +15,7 @@ export const DEFAULT_SETTINGS = {
   householdSize: 3, nearestStores: true, serpMonthlyLimit: 230, serpLocation: '', pantry: PANTRY_CHECK, sourceUrl: SOURCE_URL
 };
 
-export const app = $state({
+export const app = $state({ pantry: [],
   ready: false, session: null, user: null, household: null, error: '', toast: '',
   settings: { ...DEFAULT_SETTINGS }, stores: [], items: [], prices: {}, recipes: [], plan: { household: 3, days: [] }, purchases: [],
   members: [], invites: [], hasSerpKey: false, serpUsage: { n: 0, limit: 230 }
@@ -110,7 +111,7 @@ async function seedHousehold() {
 }
 
 export async function loadAll() {
-  const [st, s, i, p, r, w, pu, m, inv, key, use] = await Promise.all([
+  const [st, s, i, p, r, w, pu, m, inv, key, use, pan] = await Promise.all([
     sb.from('settings').select('data').maybeSingle(),
     sb.from('stores').select('*').order('sort'),
     sb.from('items').select('*'),
@@ -121,7 +122,8 @@ export async function loadAll() {
     sb.from('members').select('email,user_id'),
     sb.from('invites').select('email'),
     sb.rpc('has_serp_key'),
-    sb.from('serp_usage').select('n').eq('month', new Date().toISOString().slice(0, 7)).maybeSingle()
+    sb.from('serp_usage').select('n').eq('month', new Date().toISOString().slice(0, 7)).maybeSingle(),
+    sb.from('pantry').select('*').order('added_on', { ascending: false })
   ]);
   for (const x of [st, s, i, p, r, w, pu]) if (x.error) fail(x.error);
   app.settings = { ...DEFAULT_SETTINGS, ...(st.data?.data || {}) };
@@ -134,17 +136,24 @@ export async function loadAll() {
   app.members = m.data || []; app.invites = inv.data || [];
   app.hasSerpKey = !!key.data;
   app.serpUsage = { n: use.data?.n || 0, limit: Number(app.settings.serpMonthlyLimit) || 230 };
+  app.pantry = pan.error ? [] : pan.data;
 }
 
 let channel = null, reloadTimer = null;
 function subscribe() {
   if (channel) sb.removeChannel(channel);
   channel = sb.channel('household-' + app.household);
-  ['items', 'prices', 'recipes', 'week_plan', 'purchases', 'settings', 'stores'].forEach((table) => {
+  ['items', 'prices', 'recipes', 'week_plan', 'purchases', 'settings', 'stores', 'pantry'].forEach((table) => {
     channel.on('postgres_changes', { event: '*', schema: 'public', table, filter: `household_id=eq.${app.household}` }, (ev) => {
       // small, frequent changes are applied directly; anything else triggers a quiet reload
       if (table === 'items' && ev.new?.id) { const k = app.items.findIndex((x) => x.id === ev.new.id); if (k >= 0) { app.items[k] = toItem(ev.new); return; } }
       if (table === 'prices' && ev.new?.item_id) { setPrice(ev.new); return; }
+      if (table === 'pantry') {
+        if (ev.eventType === 'DELETE') { app.pantry = app.pantry.filter((x) => x.id !== ev.old?.id); return; }
+        const k = app.pantry.findIndex((x) => x.id === ev.new.id);
+        if (k >= 0) app.pantry[k] = ev.new; else app.pantry = [ev.new, ...app.pantry];
+        return;
+      }
       if (table === 'week_plan' && ev.new?.data) { app.plan = { household: app.plan.household, days: [], ...ev.new.data }; return; }
       clearTimeout(reloadTimer); reloadTimer = setTimeout(() => loadAll().catch(() => {}), 600);
     });
@@ -166,6 +175,7 @@ export async function setHave(itemIds, have, storeId, paid) {
   const { error } = await sb.from('items').update({ have_on: day }).in('id', itemIds);
   if (error) fail(error);
   itemIds.forEach((id) => { const it = itemById(id); if (it) { it.have = !!have; it.haveOn = day || ''; } });
+  if (have) await stockPantry(itemIds); else await unstockToday(itemIds);
   if (have && storeId) {
     const st = storeById(storeId);
     const rows = itemIds.map((id) => ({ day, store_id: storeId, store: st?.short, item_id: id, item: itemById(id)?.name, planned: paid?.[id] ?? null, status: 'Checked off' }));
@@ -369,7 +379,7 @@ async function serpLocation(geo) {
  */
 export async function refreshPrices(geo, onProgress) {
   const n = need(), loc = await serpLocation(geo);
-  const items = app.items.filter((i) => n[i.id] && !i.have);
+  const items = app.items.filter((i) => n[i.id] && !owned(i));
   const serpStores = app.stores.filter((s) => s.source === 'serpapi' || s.source === 'target');
   const stats = { live: 0, searched: 0, recent: 0, kept: 0, notListed: 0, budget: false, location: loc };
   let done = 0;
@@ -415,9 +425,53 @@ export async function saveReceipt(storeId, rows, date) {
     }
   }
   await upsertPrices(priceRows);
-  if (buy.length) { await sb.from('items').update({ have_on: day }).in('id', buy); buy.forEach((id) => { const it = itemById(id); if (it) { it.have = true; it.haveOn = day; } }); }
+  if (buy.length) { await sb.from('items').update({ have_on: day }).in('id', buy); buy.forEach((id) => { const it = itemById(id); if (it) { it.have = true; it.haveOn = day; } }); await stockPantry(buy, day); }
   if (log.length) { const { data } = await sb.from('purchases').insert(log).select(); if (data) app.purchases = [...data, ...app.purchases]; }
   return { saved: priceRows.length, bought: buy.length };
+}
+
+/* ---------------- pantry ---------------- */
+/** Is this shopping item already on hand (bought this week, or in the pantry)? */
+export const owned = (i) => i.have || covers(app.pantry, i.id);
+
+export async function addPantry(rows) {
+  const day = today();
+  const out = rows.map((r) => {
+    const it = r.item_id ? itemById(r.item_id) : null, name = r.name || it?.name || '';
+    return { item_id: r.item_id || null, name, amount: r.amount ?? it?.qty ?? '', level: r.level || 'plenty', place: r.place || placeFor(it?.cat || r.cat || '', name), added_on: day, use_by: r.use_by !== undefined ? r.use_by : useByFor(it?.cat || r.cat || '', name) };
+  });
+  // already there? top it back up instead of adding a second row
+  const fresh = [];
+  for (const r of out) {
+    const ex = r.item_id ? app.pantry.find((p) => p.item_id === r.item_id) : app.pantry.find((p) => p.name.toLowerCase() === r.name.toLowerCase());
+    if (ex) await updatePantry(ex.id, { level: 'plenty', amount: r.amount || ex.amount, use_by: r.use_by, added_on: day });
+    else fresh.push(r);
+  }
+  if (!fresh.length) return;
+  const { data, error } = await sb.from('pantry').insert(fresh).select();
+  if (error) fail(error);
+  const have = new Set(app.pantry.map((p) => p.id));
+  app.pantry = [...data.filter((d) => !have.has(d.id)), ...app.pantry];
+}
+export async function updatePantry(id, patch) {
+  const k = app.pantry.findIndex((p) => p.id === id);
+  if (k >= 0) app.pantry[k] = { ...app.pantry[k], ...patch };
+  const { error } = await sb.from('pantry').update(patch).eq('id', id);
+  if (error) fail(error);
+}
+export async function removePantry(ids) {
+  ids = [].concat(ids);
+  app.pantry = app.pantry.filter((p) => !ids.includes(p.id));
+  const { error } = await sb.from('pantry').delete().in('id', ids);
+  if (error) fail(error);
+}
+async function stockPantry(itemIds, day) {
+  try { await addPantry(itemIds.map((id) => ({ item_id: id }))); } catch (e) { console.warn('pantry', e); }
+}
+// un-ticking a trip item takes back what that tick added today
+async function unstockToday(itemIds) {
+  const ids = app.pantry.filter((p) => itemIds.includes(p.item_id) && p.added_on === today()).map((p) => p.id);
+  if (ids.length) try { await removePantry(ids); } catch (e) { console.warn('pantry', e); }
 }
 
 /* ---------------- household ---------------- */
