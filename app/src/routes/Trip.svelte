@@ -166,7 +166,14 @@
   {/if}
   {#if bought.length}
     <div class="card"><h3>Already bought ({bought.length})</h3>
-      {#each bought as b}<div class="list-row"><span>{b.name} <span class="small muted">{b.haveOn}</span></span><button class="quiet" onclick={() => untick(b.id)}>Undo</button></div>{/each}
+      {#each bought as b}
+        {@const c = cartOf[b.id]}
+        <div class="list-row"><span class="grow">{b.name} <span class="small muted">{b.haveOn}</span><br><span class="small"><b>{c?.paid != null ? fmt(c.paid) : 'no price'}</b>{c?.p?.qty ? ` · ${c.p.qty} ${c.p.unit}${c.p.unit_price ? ` @ ${fmt(c.p.unit_price)}` : ''}` : ''}{c && !c.edited ? ' (estimate)' : ''}</span></span>
+          <button class="ghost editbtn" onclick={() => (editing = editing === 'b' + b.id ? '' : 'b' + b.id)}>✎ Edit</button><button class="quiet" onclick={() => untick(b.id)}>Undo</button></div>
+        {#if editing === 'b' + b.id && c}
+          <CartEditor large={big} line={{ qty: c.p?.qty ?? n[b.id] ?? 1, unit: c.p?.unit || 'each', unit_price: c.p?.unit_price, total: c.paid }} onsave={(v) => saveEdit(c, v, c.p?.store_id || null)} oncancel={() => (editing = '')} />
+        {/if}
+      {/each}
     </div>
   {/if}
   {/if}
