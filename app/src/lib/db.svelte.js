@@ -37,7 +37,7 @@ const toItem = (r) => ({ id: r.id, cat: r.cat, name: r.name, qty: r.qty, q: r.q,
 const toRecipe = (r) => ({ id: r.id, title: r.title, active: r.active, servings: Number(r.servings) || 0, yield: r.yield || '', when: r.meal || '', fridge: r.fridge || '', freeze: r.freeze || '',
   ing: r.ing || [], steps: r.steps || [], tip: r.tip || '', custom: r.custom, source: r.source || '', cuisine: r.cuisine || '', calories: Number(r.calories) || 0, items: r.items || {}, createdAt: r.created_at });
 const fromRecipe = (r) => ({ id: r.id, title: r.title, active: !!r.active, servings: Number(r.servings) || null, yield: r.yield || '', meal: r.when || '', fridge: r.fridge || '', freeze: r.freeze || '',
-  ing: r.ing || [], steps: r.steps || [], tip: r.tip || '', custom: !!r.custom, source: r.source || '', cuisine: r.cuisine || null, calories: Number(r.calories) || null, items: r.items || {} });
+  ing: r.ing || [], steps: r.steps || [], tip: r.tip || '', custom: !!r.custom, source: r.source || '', cuisine: r.cuisine || null, ...(Number(r.calories) ? { calories: Number(r.calories) } : {}), items: r.items || {} });
 function setPrice(row) {
   const e = (app.prices[row.item_id] = app.prices[row.item_id] || {});
   e[row.store_id] = { price: row.price == null ? null : Number(row.price), unitPrice: row.unit_price, unitNeeded: row.unit_needed == null ? null : Number(row.unit_needed),
