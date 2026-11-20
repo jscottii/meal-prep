@@ -4,7 +4,7 @@
 
 <script>
   import { untrack } from 'svelte';
-  import { app, portions, guideFor, loadGuide, updatePrep, toast, removePantry, addPantry } from '../lib/db.svelte.js';
+  import { app, portions, guideFor, loadGuide, updatePrep, toast, removePantry, addPantry, patchPlan } from '../lib/db.svelte.js';
   import { usedByRecipes } from '../lib/pantry.js';
   import { scaleLine, scaleStepHtml, prepLists, cookMinutes, alignSteps, isPrepStep, durationOf, equipmentFor, stepMinutes, fmtMins } from '../lib/cookday.js';
   import { unlockAudio, holdAwake } from '../lib/timers.js';
@@ -97,7 +97,7 @@
     // recipes the game plan doesn't cover: longest cook first, so the oven works while you do the rest
     recipes.filter((r) => !covered.has(r.id)).sort((a, b) => cookMinutes(b) - cookMinutes(a))
       .forEach((r) => out.push({ kind: 'recipe', title: r.title, mins: cookMinutes(r) + 5 * r.steps.length, approx: true, subs: [{ r, js: r.steps.map((_, j) => j) }] }));
-    out.push({ kind: 'pack', title: 'Pack it up', mins: 15, approx: true });
+    out.push({ kind: 'pack', title: app.settings.audience === 'group' ? 'Hold & serve' : 'Pack it up', mins: 15, approx: true });
     out.forEach((st) => (st.label = `${fmtMins(st.mins, st.approx)}${st.mins ? ' · ' : ''}${st.title}`));
     return out;
   });
@@ -136,6 +136,22 @@
   const big = $derived(app.settings.audience === 'group');
   let mode = $state(localStorage.getItem('mp-prep-mode') || (untrack(() => app.settings.audience) === 'group' ? 'steps' : 'simple'));
   $effect(() => { if (big && mode === 'simple') mode = 'steps'; if (!big && mode === 'overview') mode = 'simple'; });
+  // big group: work backwards from serving time
+  let serveAt = $state(untrack(() => app.plan.serveAt) || '18:00');
+  const kitchen = $derived(app.plan.kitchen || '');
+  const clock = (d) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  let starts = $derived.by(() => {
+    const [h, m] = String(serveAt || '18:00').split(':').map(Number);
+    const serve = new Date(); serve.setHours(h || 18, m || 0, 0, 0);
+    const cookSteps = steps.filter((st) => st.kind !== 'pack');
+    let t = new Date(serve.getTime() - cookSteps.reduce((a, st) => a + (st.mins || 0), 0) * 60000);
+    const out = {};
+    steps.forEach((st, i) => { if (st.kind === 'pack') { out[i] = serve; return; } out[i] = new Date(t); t = new Date(t.getTime() + (st.mins || 0) * 60000); });
+    return out;
+  });
+  function setServe(v) { serveAt = v; patchPlan({ serveAt: v }).catch(() => {}); }
+  function setKitchen(v) { patchPlan({ kitchen: v }).catch((e) => (err = e.message)); }
+  const KITCHENS = [['home', '🏠 Home kitchen'], ['commercial', '🏫 Church / commercial'], ['both', '🚗 Prep at home, serve on site']];
   let totalPortions = $derived(Object.values(por).reduce((a, x) => a + (x.portions || 0), 0));
   let at = $state(Number(localStorage.getItem('mp-prep-step')) || 0);
   function resume() { mode = 'steps'; at = firstUndone; window.scrollTo(0, 0); }
@@ -266,6 +282,12 @@
         </div>
         <div class="small" style="margin-top:8px">{#each recipes as r}<div>• <b>{shortTitle(r.title)}</b> — {por[r.id]?.portions || r.servings || '?'} portions = {times(kOf[r.id])}{r.servings ? ` (recipe serves ${r.servings})` : ''}</div>{/each}</div>
         <p class="small muted" style="margin:6px 0 0">Every amount in the steps below is already scaled for your group.</p>
+        <p class="sentence small" style="margin:8px 0 0">Serving at <input class="inl" type="time" value={serveAt} onchange={(e) => setServe(e.currentTarget.value)} /> → start by <b>{starts[0] ? clock(starts[0]) : '—'}</b>.</p>
+        <p class="small" style="margin:6px 0 0">Where are you cooking this one?</p>
+        <div class="row" style="gap:4px">{#each KITCHENS as [k, l]}<button class="chip" class:on={kitchen === k} onclick={() => setKitchen(k)}>{l}</button>{/each}</div>
+        {#if kitchen === 'home'}<p class="small muted" style="margin:6px 0 0">One oven: the steps run oven dishes back to back. Bake anything that holds well first and keep it warm at 170°F.</p>
+        {:else if kitchen === 'commercial'}<p class="small muted" style="margin:6px 0 0">Use full hotel pans (about 4× a 9×13) and sheet pans; split the steps between helpers.</p>
+        {:else if kitchen === 'both'}<p class="small muted" style="margin:6px 0 0">Cook ahead, chill fast, transport cold in coolers, and reheat on site to 165°F. Leave an extra 45 min to reheat.</p>{/if}
       </div>
     {/if}
     {#if mode !== 'simple'}
@@ -287,7 +309,7 @@
     {#if mode === 'steps' && cur}
      <div class="prep-grid"><div>
       <p class="small muted" style="margin:0">Step {idx + 1} of {steps.length}</p>
-      <p class="small" style="margin:6px 0 0;color:var(--accent);font-weight:650">⏱ {fmtMins(cur.mins, cur.approx) || '—'}</p>
+      <p class="small" style="margin:6px 0 0;color:var(--accent);font-weight:650">⏱ {fmtMins(cur.mins, cur.approx) || '—'}{big && starts[idx] ? ` · ${cur.kind === 'pack' ? 'serve' : 'start'} at ${clock(starts[idx])}` : ''}</p>
       <h2 style="margin:2px 0 10px">{stepDone(cur) ? '✓ ' : ''}{cur.title}</h2>
 
       {#if cur.kind === 'setup'}
@@ -318,6 +340,24 @@
         {#each cur.subs as e}{@render subBlock(e)}{/each}
       {:else if cur.kind === 'recipe'}
         {#each cur.subs as e}{@render subBlock(e)}{/each}
+      {:else if cur.kind === 'pack' && big}
+        <div class="card">
+          <h3 style="margin-top:0">🔥 Holding until you serve</h3>
+          <ul class="small" style="margin:0;padding-left:18px">
+            <li>Keep hot food at <b>140°F or hotter</b> — a 170–200°F oven, chafing dishes, or slow cookers on warm. Cover to stop it drying out.</li>
+            <li>Keep cold food at <b>40°F or colder</b> — on ice, or in the fridge until serving.</li>
+            <li>Food can sit out for <b>2 hours at most</b> (1 hour if it's over 90°F outside), then refrigerate or toss.</li>
+            {#if kitchen === 'both'}<li>Reheating on site: everything to <b>165°F</b> before it goes on the line.</li>{/if}
+          </ul>
+          <h3>🍽 Serving line</h3>
+          <p class="small" style="margin:0 0 4px">Plates → starch → main → veg/salad → sauces → bread → drinks; desserts on a separate table so the line keeps moving.</p>
+          {#each recipes as r}
+            {@const p = por[r.id]?.portions || r.servings || 0}
+            <div class="list-row"><div class="grow"><b class="small">{r.title}</b><div class="small muted">{p} portions{r.servings ? ` · split each batch into ${r.servings} servings` : ''}{p >= 20 ? ' · use a ½-cup or 1-cup scoop so portions stay even' : ''}</div></div></div>
+          {/each}
+          <h3>📦 After</h3>
+          <p class="small" style="margin:0">Cool leftovers fast in shallow containers and fridge within 2 hours. {recipes.some((r) => r.freeze) ? 'Most of these freeze — label with the name and date.' : ''}</p>
+        </div>
       {:else if cur.kind === 'pack'}
         <div class="card">
           <p class="small" style="margin-top:0">Let hot food cool (no more than an hour on the counter) before lidding it, then fridge or freeze. Label freezer containers with the name and date.</p>
@@ -349,7 +389,7 @@
      </div>
      <aside class="prep-aside card">
        <h3>All steps</h3>
-       {#each steps as s, i}<button class:on={i === idx} class:done={stepDone(s)} onclick={() => { at = i; window.scrollTo(0, 0); }}>{stepDone(s) ? '✓' : i + 1}. {s.label}</button>{/each}
+       {#each steps as s, i}<button class:on={i === idx} class:done={stepDone(s)} onclick={() => { at = i; window.scrollTo(0, 0); }}>{stepDone(s) ? '✓' : i + 1}. {big && starts[i] ? clock(starts[i]) + ' · ' : ''}{s.label}</button>{/each}
      </aside></div>
     {:else}
       <button style="width:100%;margin-bottom:10px" onclick={resume}>▶ {doneCount ? 'Pick up where you left off' : 'Start cooking'}: step {firstUndone + 1} · {steps[firstUndone]?.label}</button>

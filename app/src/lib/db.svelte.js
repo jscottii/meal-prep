@@ -93,6 +93,14 @@ export async function setHouseholdSize(n) {
     }
   }
 }
+/** Change a few fields of this week's plan (e.g. swap two nights, the serving time, where you're cooking). */
+export async function patchPlan(patch) {
+  const { weeks: _old, ...rest } = app.plan;
+  const plan = { ...rest, ...patch };
+  const { error } = await sb.from('week_plan').upsert({ household_id: app.household, data: plan, updated_at: new Date().toISOString() });
+  if (error) fail(error);
+  app.plan = plan;
+}
 /** Clear this week's plan (saved recipes stay). */
 export async function deletePlan() {
   const { weeks: _old, ...rest } = app.plan;
