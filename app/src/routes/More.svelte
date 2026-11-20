@@ -137,7 +137,7 @@
     <InstallApp />
     <div class="card">
       <label class="f">Who you cook for<select bind:value={s.audience} onchange={() => { saveSettings({ audience: s.audience }); toast(s.audience === "group" ? "✓ Big-group mode: more detail everywhere" : "✓ Household mode: simpler screens"); }}><option value="household">My household — keep it simple</option><option value="group">A big group (10+) — show me the details</option></select></label>
-      <label class="f">Show pantry amounts in<select bind:value={s.units}><option value="imperial">Imperial — lb, oz, cups</option><option value="metric">Metric — kg, g, L</option></select></label>
+      <label class="f">Show pantry amounts in<select bind:value={s.units}><option value="imperial">Imperial — lb, oz, cups</option><option value="metric">Metric — kg, g, L</option><option value="relative">Roughly — plenty, some, low, out</option></select></label>
       <label class="f">Home address (trips end here)<input bind:value={s.homeAddress} /></label>
       <div class="grid2">
         <label class="f">Usually feeding (people)<input type="number" min="1" bind:value={s.householdSize} /></label>

@@ -159,3 +159,16 @@ select.inl { padding-right: 2px; }
 .amt { display: flex; gap: 4px; flex: none; }
 .amt input { width: 64px; padding: 6px; }
 .amt select { width: auto; padding: 6px; }
+.sched { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
+.sched-day { border: 1px solid var(--line); border-radius: 10px; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+.sched-slot { display: flex; flex-direction: column; gap: 2px; }
+.sched-slot select { padding: 5px; font-size: 13px; }
+.amt { flex-wrap: wrap; }
+.amt input.missing { border-color: var(--accent); background: var(--accent-soft); }
+.statusbar { position: sticky; top: 0; z-index: 20; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; background: var(--card); border: 1px solid var(--accent); border-radius: 12px; padding: 8px 10px; margin-bottom: 10px; box-shadow: 0 4px 12px rgba(0,0,0,.08); }
+.statusbar > div { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); }
+.statusbar b { font-size: 15px; color: var(--ink); }
+.statusbar b.late { color: #c0392b; }
+.statusbar .next { grid-column: 1 / -1; flex-direction: row; gap: 6px; align-items: baseline; border-top: 1px solid var(--line); padding-top: 6px; }
+.statusbar .next b { font-size: 14px; }
+.setupcard { border-color: var(--accent); }

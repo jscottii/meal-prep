@@ -408,3 +408,68 @@ export function fmtMins(m, approx = false) {
   const h = Math.floor(r / 60), mm = r % 60;
   return (approx ? '~' : '') + (h ? `${h} hr${mm ? ` ${mm} min` : ''}` : `${mm} min`);
 }
+
+/* ---------------- scaling time with batch size ----------------
+ * Cooking more food doesn't take proportionally longer — it depends on what limits the step:
+ *  - Knife work & assembly: your hands are the limit, so it's nearly linear (k^0.85: a little faster once you're in a rhythm).
+ *  - Bringing liquid to a boil: the burner's power is the limit, so time grows with the amount (linear), capped at 3×
+ *    because bigger batches go in bigger pots over more burners.
+ *  - A bigger single piece (whole roast, turkey, brisket): heat has to travel to the center, and time grows with
+ *    thickness squared; a piece k times heavier is k^(1/3) thicker, so time grows by k^(2/3).
+ *    (Double a roast → about 1.6× the time, not 2×. Never raise the temperature to make up for it.)
+ *  - Pans in the oven: each pan cooks in the same time, but a fuller oven recovers heat more slowly (+10% per extra pan,
+ *    up to +30%), and if the pans don't all fit, they go in rounds.
+ *  - Searing / browning: crowding a pan steams the food, so you brown in batches (one batch per pan-full).
+ *  - Simmering / braising: the time to get tender doesn't change; only the heat-up of a bigger pot does (k^(1/3)).
+ *  - Resting, marinating, chilling, rising: unchanged.
+ */
+const PREP_RE = /\b(chop|dice|slice|cut|mince|peel|grate|trim|wash|shred|measure|whisk|mix|toss|assemble|portion|form|shape|roll|stuff|spread|layer|pack|label|scoop)\b/i;
+const BOIL_RE = /\bbring\b.*\bboil\b|\bboil (?:the )?water\b|\buntil boiling\b/i;
+const BIG_PIECE_RE = /\b(whole (?:chicken|turkey|fish)|turkey|brisket|shoulder|pork butt|roast beef|prime rib|leg of lamb|ham\b|tenderloin|meatloaf)\b/i;
+const OVEN_RE = /\b(oven|bake|baked|roast|roasting|broil|sheet pan|baking sheet|baking dish|casserole|°\s*F)\b/i;
+const SEAR_RE = /\b(sear|brown|saut[ée]|fry|crisp|char)\b/i;
+const SIMMER_RE = /\b(simmer|braise|stew|slow cook|pressure cook|instant pot|poach)\b/i;
+const WAIT_RE = /\b(rest|marinate|chill|refrigerate|cool|rise|proof|soak|set aside|freeze)\b/i;
+
+/** How many oven pans one batch of a recipe uses ("two sheet pans" → 2). */
+export function pansOf(r) {
+  const t = (r?.steps || []).join(' ');
+  const m = t.match(/\b(two|three|four|2|3|4)\s+(?:large\s+)?(?:sheet pans|baking sheets|baking dishes|pans|trays)\b/i);
+  const n = m ? ({ two: 2, three: 3, four: 4 }[m[1].toLowerCase()] || Number(m[1])) : 1;
+  return OVEN_RE.test(t) ? n : 0;
+}
+
+/**
+ * Minutes for a step when making k× the recipe.
+ * setup: { ovens, racks (pans per oven), commercial } · pans: oven pans per batch
+ * Returns { mins, perRound, rounds, pans, note }
+ */
+export function scaleTime(text, mins, k = 1, setup = {}, pans = 1) {
+  const t = String(text || ''), base = Number(mins) || 0;
+  const out = { mins: base, perRound: base, rounds: 1, pans: 0, note: '' };
+  if (!base || !(k > 0) || Math.abs(k - 1) < 0.01) return out;
+  const r5 = (x) => Math.max(1, Math.round(x / 5) * 5 || Math.round(x));
+  if (WAIT_RE.test(t) && !OVEN_RE.test(t) && !SEAR_RE.test(t)) return out;
+  if (OVEN_RE.test(t) && BIG_PIECE_RE.test(t)) {
+    const f = Math.pow(k, 2 / 3);
+    return { ...out, mins: r5(base * f), perRound: r5(base * f), note: `bigger cut: about ${f.toFixed(1)}× the time at the same temperature — go by a thermometer` };
+  }
+  if (OVEN_RE.test(t) && !PREP_RE.test(t.split(/[.;]/)[0])) {
+    const need = Math.max(1, Math.ceil((pans || 1) * k - 0.01));
+    const fit = Math.max(1, (Number(setup.ovens) || 1) * (Number(setup.racks) || 2));
+    const rounds = Math.ceil(need / fit), perLoad = Math.min(need, fit);
+    const load = setup.commercial ? 1 + Math.min(0.15, (perLoad - 1) * 0.03) : 1 + Math.min(0.3, (perLoad - 1) * 0.1);
+    const per = r5(base * load);
+    return { mins: per * rounds + (rounds - 1) * 5, perRound: per, rounds, pans: need,
+      note: rounds > 1 ? `${need} pans, ${perLoad} at a time → ${rounds} rounds of ${per} min (rotate pans halfway)` : need > 1 ? `${need} pans in together, rotate halfway${load > 1 ? ` — a full oven adds ~${Math.round((load - 1) * 100)}%` : ''}` : '' };
+  }
+  if (BOIL_RE.test(t)) { const f = Math.min(3, k); return { ...out, mins: r5(base * f), perRound: r5(base * f), note: k > 2 ? 'use the biggest pot, lid on — or split across two pots' : '' }; }
+  if (SEAR_RE.test(t) && !SIMMER_RE.test(t)) {
+    const per = setup.commercial ? 3 : 1, batches = Math.max(1, Math.ceil(k / per - 0.01));
+    return { ...out, mins: r5(base * batches), perRound: base, rounds: batches, note: batches > 1 ? `brown in ${batches} batches so the pan doesn't steam` : '' };
+  }
+  if (SIMMER_RE.test(t)) { const f = Math.pow(k, 1 / 3); return { ...out, mins: r5(base * f), perRound: r5(base * f), note: k > 1.5 ? 'a bigger pot takes longer to come back to a simmer; the cooking time itself doesn’t change' : '' }; }
+  if (PREP_RE.test(t)) { const f = Math.pow(k, 0.85); return { ...out, mins: r5(base * f), perRound: r5(base * f), note: '' }; }
+  const f = Math.pow(k, 1 / 3);
+  return { ...out, mins: r5(base * f), perRound: r5(base * f) };
+}

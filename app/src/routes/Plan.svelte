@@ -38,7 +38,7 @@
   function reshape(patch) {
     Object.assign(shape, patch);
     if (shape.to < shape.from) shape.to = shape.from;
-    days = autoFill(picked, household);
+    days = autoFill(picked, household); manual = false;
   }
   function setMealCount(n) { reshape({ meals: DEFAULT_MEALS[n] }); }
   function toggleMeal(m) { const has = shape.meals.includes(m); if (has && shape.meals.length === 1) return; reshape({ meals: has ? shape.meals.filter((x) => x !== m) : ['breakfast', 'lunch', 'dinner'].filter((x) => x === m || shape.meals.includes(x)) }); }
@@ -71,8 +71,10 @@
   let useSoon = $derived(app.pantry.filter((p) => { const d = daysLeft(p.use_by); return d != null && d <= 3; }));
   let showPantry = $state(true);
 
+  let manual = $state(!!app.plan.days?.length);   // you placed meals yourself (or a saved plan), so don't reshuffle them
   function toggle(id) {
     if (sel[id]) { delete sel[id]; days.forEach((d) => SLOTS.forEach((s) => d[s] === id && (d[s] = ''))); } else sel[id] = true;
+    if (!manual) days = autoFill(picked, household);
     msg = '';
   }
   function setHousehold(v) { const nv = Math.max(1, Number(v) || 1); days.forEach((d) => { if (Number(d.people) === Number(household)) d.people = nv; }); household = nv; }
@@ -85,7 +87,7 @@
     const pantryIds = new Set(app.pantry.filter((p) => p.item_id && !['low', 'out'].includes(p.level)).map((p) => p.item_id));
     const r = pickMix({ recipes: app.recipes, need: needN, pantryIds, liked: app.settings.cuisines || [], recent, usePantry: !!usePantry });
     sel = Object.fromEntries(r.ids.map((id) => [id, true]));
-    days = autoFill(picked, household);
+    days = autoFill(picked, household); manual = false;
     mixInfo = r;
   }
   async function removePlan() {
@@ -98,7 +100,7 @@
     if (!picked.length) { err = 'Pick at least one recipe.'; return; }
     saving = true; err = '';
     try {
-      await savePlan({ household, shape: $state.snapshot(shape), days: $state.snapshot(autoFill(picked, household)), selected: Object.keys(sel), startNewWeek: startNew, pantry, sourceUrl });
+      await savePlan({ household, shape: $state.snapshot(shape), days: $state.snapshot(days), selected: Object.keys(sel), startNewWeek: startNew, pantry, sourceUrl });
       trip.result = null;
       if (startNew) { go('trip'); planTrip(); } else toast('✓ Draft saved');
     } catch (e) { err = e.message; }
@@ -188,6 +190,25 @@
       <div style="margin-top:10px">{#each picked as r (r.id)}<button class="chip on" onclick={() => toggle(r.id)}>✓ {short(r)}</button>{/each}</div>
     {/if}
   </div>
+
+  {#if picked.length}
+    <div class="card">
+      <h3 style="margin:0">Which meal, which day</h3>
+      <p class="small muted" style="margin:4px 0 8px">We spread them out for you — change any meal. {manual ? '' : 'Leftovers fill the gaps.'}</p>
+      <div class="sched">
+        {#each days.slice(shape.from, shape.to + 1) as d}
+          <div class="sched-day">
+            <b class="small">{d.day.slice(0, 3)}</b>
+            {#each [...shape.meals, ...(shape.snack ? ['snack'] : [])] as m}
+              <label class="small sched-slot"><span class="muted">{m[0].toUpperCase() + m.slice(1)}</span>
+                <select value={d[m]} onchange={(e) => { d[m] = e.currentTarget.value; manual = true; }}><option value="">— nothing / eating out</option>{#each opts(m) as r}<option value={r.id}>{short(r)}</option>{/each}</select></label>
+            {/each}
+          </div>
+        {/each}
+      </div>
+      {#if manual}<button class="quiet" onclick={() => { days = autoFill(picked, household); manual = false; }}>↺ Spread them out for me again</button>{/if}
+    </div>
+  {/if}
 
   <div class="card">
     <h3 style="margin:0">Ready?</h3>

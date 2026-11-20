@@ -1,9 +1,15 @@
 <script>
   import { app, addPantry, updatePantry, removePantry, toast } from '../lib/db.svelte.js';
   import { parseAdd, daysLeft, covers, placeFor, useByFor } from '../lib/pantry.js';
-  import { showAmount, splitAmount, UNIT_CHOICES } from '../lib/units.js';
+  import { showAmount, splitContainer, joinContainer, UNIT_CHOICES, CONTAINERS, SIZE_UNITS } from '../lib/units.js';
+  const relative = $derived(app.settings.units === 'relative');
   const mode = $derived(app.settings.units === 'metric' ? 'metric' : 'imperial');
-  function setAmount(p, n, unit) { const v = n === '' || n == null ? '' : `${Number(n)} ${unit}`; set(p, { amount: v, level: v && Number(n) <= 0 ? 'out' : p.level === 'low' ? 'low' : !v ? p.level : 'plenty' }); }
+  const LEVELS = [['plenty', 'Plenty'], ['some', 'Some'], ['low', 'Low'], ['out', 'Out']];
+  // amount = "2 lb" or, for containers, "2 can (15 oz)" — a can or bag needs its size
+  function setAmount(p, a) {
+    const v = joinContainer(a.n, a.unit, a.size, a.sizeUnit);
+    set(p, { amount: v, level: v && Number(a.n) <= 0 ? 'out' : p.level === 'low' ? 'low' : 'plenty' });
+  }
   let { go } = $props();
 
   const PLACES = [['fridge', '🧊 Fridge'], ['freezer', '❄️ Freezer'], ['pantry', '🥫 Pantry'], ['counter', '🧺 Counter']];
@@ -88,16 +94,26 @@
     <div class="card">
       <h3>{g.label} <span class="small muted" style="font-weight:400">({g.rows.length})</span></h3>
       {#each g.rows as p (p.id)}
-        {@const a = splitAmount(p.amount, mode)}
+        {@const a = splitContainer(p.amount, mode)}
+        {@const needSize = CONTAINERS.includes(a.unit) && !a.size}
         <div class="list-row" style="flex-wrap:wrap">
           <button class="grow quiet" style="text-align:left;justify-content:flex-start;color:var(--ink);padding:0" onclick={() => (editing = editing === p.id ? '' : p.id)}>
-            <span><b>{p.name}</b>{#if !p.amount}<span class="small" style="color:var(--accent)"> · how much?</span>{/if}{#if when(p)}<br><span class="small" style:color={daysLeft(p.use_by) <= 2 ? 'var(--accent)' : 'var(--muted)'}>{when(p)}</span>{/if}</span>
+            <span><b>{p.name}</b>{#if !relative && !p.amount}<span class="small" style="color:var(--accent)"> · how much?</span>{:else if !relative && needSize}<span class="small" style="color:var(--accent)"> · what size {a.unit}?</span>{/if}{#if when(p)}<br><span class="small" style:color={daysLeft(p.use_by) <= 2 ? 'var(--accent)' : 'var(--muted)'}>{when(p)}</span>{/if}</span>
           </button>
-          <div class="amt">
-            <input type="number" min="0" step="any" inputmode="decimal" placeholder="?" value={a.n ?? ''} aria-label="How much of {p.name}" onchange={(e) => setAmount(p, e.currentTarget.value, a.unit)} />
-            <select value={a.unit} aria-label="Unit" onchange={(e) => setAmount(p, a.n ?? 1, e.currentTarget.value)}>{#each UNIT_CHOICES[mode] as u}<option value={u}>{u}</option>{/each}</select>
-          </div>
-          <button class="chip" class:on={['low', 'out'].includes(p.level)} title="Put it on the shopping list" onclick={() => set(p, { level: ['low', 'out'].includes(p.level) ? 'plenty' : 'low' })}>{['low', 'out'].includes(p.level) ? '🛒 On list' : '+ List'}</button>
+          {#if relative}
+            <div class="seg" style="flex:none">{#each LEVELS as [k, label]}<button class:on={(p.level || 'plenty') === k} class="lv lv-{k}" onclick={() => set(p, { level: k })}>{label}</button>{/each}</div>
+          {:else}
+            <div class="amt">
+              <input type="number" min="0" step="any" inputmode="decimal" placeholder="?" value={a.n ?? ''} aria-label="How much of {p.name}" onchange={(e) => setAmount(p, { ...a, n: e.currentTarget.value })} />
+              <select value={a.unit} aria-label="Unit" onchange={(e) => setAmount(p, { ...a, n: a.n ?? 1, unit: e.currentTarget.value })}>{#each UNIT_CHOICES[mode] as u}<option value={u}>{u}</option>{/each}</select>
+              {#if CONTAINERS.includes(a.unit)}
+                <span class="small muted" style="align-self:center">of</span>
+                <input type="number" min="0" step="any" inputmode="decimal" placeholder="size" class:missing={needSize} value={a.size ?? ''} aria-label="Size of each {a.unit}" onchange={(e) => setAmount(p, { ...a, n: a.n ?? 1, size: e.currentTarget.value })} />
+                <select value={a.sizeUnit} aria-label="Size unit" onchange={(e) => setAmount(p, { ...a, n: a.n ?? 1, sizeUnit: e.currentTarget.value })}>{#each SIZE_UNITS[mode] as u}<option value={u}>{u}</option>{/each}</select>
+              {/if}
+            </div>
+            <button class="chip" class:on={['low', 'out'].includes(p.level)} title="Put it on the shopping list" onclick={() => set(p, { level: ['low', 'out'].includes(p.level) ? 'plenty' : 'low' })}>{['low', 'out'].includes(p.level) ? '🛒 On list' : '+ List'}</button>
+          {/if}
           <button class="quiet" aria-label="Used up" title="Used up — remove" onclick={() => drop(p)}>✕</button>
           {#if editing === p.id}
             <div class="grid2" style="width:100%;margin-top:6px">
@@ -109,5 +125,5 @@
       {/each}
     </div>
   {/each}
-  {#if app.pantry.length}<p class="small muted">Tap an item to change its amount, where it lives, or its use-by date. Fill in how much you have. Set it to 0, or tap <b>+ List</b>, to put it on the shopping list. Switch between imperial and metric in More → Settings.</p>{/if}
+  {#if app.pantry.length}<p class="small muted">Tap an item to change its amount, where it lives, or its use-by date. {relative ? 'Low or Out puts it back on the shopping list.' : 'Fill in how much you have — for a can, jar or bag, also its size. Set it to 0, or tap + List, to put it on the shopping list.'} Change how amounts work in More → Settings.</p>{/if}
 </div>

@@ -31,8 +31,8 @@ export function showAmount(str, mode = 'imperial') {
 }
 
 export const UNIT_CHOICES = {
-  imperial: ['each', 'lb', 'oz', 'gal', 'qt', 'cups', 'fl oz', 'dozen', 'pack', 'bag', 'box', 'can', 'jar', 'bottle', 'bunch', 'loaf'],
-  metric: ['each', 'kg', 'g', 'L', 'ml', 'dozen', 'pack', 'bag', 'box', 'can', 'jar', 'bottle', 'bunch', 'loaf'],
+  imperial: ['each', 'lb', 'oz', 'gal', 'qt', 'cups', 'fl oz', 'dozen', 'bunch', 'loaf', 'can', 'jar', 'bag', 'box', 'bottle', 'pack', 'carton', 'tub'],
+  metric: ['each', 'kg', 'g', 'L', 'ml', 'dozen', 'bunch', 'loaf', 'can', 'jar', 'bag', 'box', 'bottle', 'pack', 'carton', 'tub'],
 };
 /** "1.5 lb" → { n: 1.5, unit: 'lb' } in the household's system (converted if needed). */
 export function splitAmount(str, mode = 'imperial') {
@@ -41,8 +41,21 @@ export function splitAmount(str, mode = 'imperial') {
   const FR = { '½': 0.5, '¼': 0.25, '¾': 0.75, '⅓': 0.33, '⅔': 0.67, '⅛': 0.125 };
   const n = m && (m[1] || m[2]) ? Math.round(((Number(m[1]) || 0) + (FR[m[2]] || 0)) * 100) / 100 : null;
   let unit = (m?.[3] || 'each').toLowerCase();
-  const alias = { lbs: 'lb', pound: 'lb', pounds: 'lb', ounce: 'oz', ounces: 'oz', cup: 'cups', l: 'L', liter: 'L', liters: 'L', gallon: 'gal', gallons: 'gal', quart: 'qt', quarts: 'qt', packs: 'pack', bags: 'bag', boxes: 'box', cans: 'can', jars: 'jar', bottles: 'bottle', bunches: 'bunch', loaves: 'loaf', eggs: 'each', large: 'each', small: 'each', medium: 'each', head: 'each', heads: 'each' };
+  const alias = { lbs: 'lb', pound: 'lb', pounds: 'lb', ounce: 'oz', ounces: 'oz', cup: 'cups', l: 'L', liter: 'L', liters: 'L', gallon: 'gal', gallons: 'gal', quart: 'qt', quarts: 'qt', packs: 'pack', bags: 'bag', boxes: 'box', cans: 'can', jars: 'jar', bottles: 'bottle', cartons: 'carton', tubs: 'tub', bunches: 'bunch', loaves: 'loaf', eggs: 'each', large: 'each', small: 'each', medium: 'each', head: 'each', heads: 'each' };
   unit = alias[unit] || unit;
   if (!UNIT_CHOICES[mode].includes(unit)) unit = 'each';
   return { n, unit };
+}
+
+export const CONTAINERS = ['can', 'jar', 'bag', 'box', 'bottle', 'pack', 'carton', 'tub'];
+export const SIZE_UNITS = { imperial: ['oz', 'fl oz', 'lb', 'ct'], metric: ['g', 'ml', 'kg', 'L', 'ct'] };
+/** "2 can (15 oz)" → { n: 2, unit: 'can', size: 15, sizeUnit: 'oz' } */
+export function splitContainer(str, mode = 'imperial') {
+  const m = String(str || '').match(/\(([\d.]+)\s*(fl oz|[a-zA-Z]+)\)/);
+  const base = splitAmount(String(str || '').replace(/\s*\(.*\)/, ''), mode);
+  return { ...base, size: m ? Number(m[1]) : null, sizeUnit: m ? m[2] : SIZE_UNITS[mode][0] };
+}
+export function joinContainer(n, unit, size, sizeUnit) {
+  if (n === '' || n == null) return '';
+  return CONTAINERS.includes(unit) && size ? `${Number(n)} ${unit} (${Number(size)} ${sizeUnit})` : `${Number(n)} ${unit}`;
 }

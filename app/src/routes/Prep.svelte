@@ -6,7 +6,7 @@
   import { untrack } from 'svelte';
   import { app, portions, guideFor, loadGuide, updatePrep, toast, removePantry, addPantry, patchPlan } from '../lib/db.svelte.js';
   import { usedByRecipes } from '../lib/pantry.js';
-  import { scaleLine, scaleStepHtml, prepLists, cookMinutes, alignSteps, isPrepStep, durationOf, equipmentFor, stepMinutes, fmtMins } from '../lib/cookday.js';
+  import { scaleLine, scaleStepHtml, prepLists, cookMinutes, alignSteps, isPrepStep, durationOf, equipmentFor, stepMinutes, fmtMins, scaleTime, pansOf } from '../lib/cookday.js';
   import { unlockAudio, holdAwake } from '../lib/timers.js';
   import { tap } from '../lib/native.js';
   import Tonight from '../components/Tonight.svelte';
@@ -58,6 +58,11 @@
   });
   const firstWords = (t) => { const w = String(t).split(/[.;:]/)[0]; return w.length > 60 ? w.slice(0, 57) + '…' : w; };
 
+  // the kitchen you're cooking in decides how many pans fit at once (big groups set this up before cooking)
+  const KITCHEN_DEFAULTS = { home: { ovens: 1, racks: 2, commercial: false }, commercial: { ovens: 2, racks: 6, commercial: true }, both: { ovens: 1, racks: 2, commercial: false } };
+  let setup = $derived({ ...KITCHEN_DEFAULTS[app.plan.kitchen || 'home'], ...(app.plan.kitchenSetup || {}) });
+  const avgK = (rs) => (rs.length ? rs.reduce((a, r) => a + (kOf[r.id] || 1), 0) / rs.length : 1);
+
   /* ---------- the step-by-step plan: the game plan's own steps, with each recipe's matching steps inside ---------- */
   let steps = $derived.by(() => {
     const out = [], covered = new Set(), before = [];
@@ -82,7 +87,11 @@
         // no next step to measure against (usually dinner): estimate from its recipe steps, else 15 min
         let m = mins[idx], approx = false;
         if (m == null) { const d = subs[idx].flatMap((e) => e.js.map((j) => durationOf(e.r.steps[j])?.maxMins || 0)); m = Math.max(15, ...d); approx = true; }
-        timeSteps.push({ kind: 'time', key: it.key, mins: m, approx, title: firstWords(it.text), text: it.text, subs: subs[idx], prep: isPrepStep(it.text) });
+        // more food: scale the time by what limits this step (see scaleTime)
+        const rs = subs[idx].length ? subs[idx].map((e) => e.r) : g.mine;
+        const k = subs[idx].length ? Math.max(...rs.map((r) => kOf[r.id] || 1)) : avgK(rs);
+        const sc = scaleTime(it.text, m, k, setup, Math.max(1, ...rs.map(pansOf)));
+        timeSteps.push({ kind: 'time', key: it.key, mins: sc.mins, base: m, note: sc.note, approx: approx || sc.mins !== m, title: firstWords(it.text), text: it.text, subs: subs[idx], prep: isPrepStep(it.text) });
       });
     });
     // knife prep + seasonings go on the plan's "chop everything" step, or get their own steps before it
@@ -90,13 +99,16 @@
     if (chop) { chop.knife = lists.knife.length > 0; chop.spices = lists.spices.length > 0; }
     else {
       const cuts = lists.knife.reduce((a, g) => a + g.items.length, 0);
-      if (lists.knife.length) out.push({ kind: 'knife', title: 'Knife prep', mins: Math.max(10, Math.round(cuts * 3 / 5) * 5), approx: true });
+      if (lists.knife.length) out.push({ kind: 'knife', title: 'Knife prep', mins: Math.max(10, Math.round(cuts * 3 * Math.pow(avgK(recipes), 0.85) / 5) * 5), approx: true });
       if (lists.spices.length) out.push({ kind: 'spices', title: 'Measure the seasonings', mins: Math.max(5, lists.spices.length * 2), approx: true });
     }
     out.push(...timeSteps);
     // recipes the game plan doesn't cover: longest cook first, so the oven works while you do the rest
     recipes.filter((r) => !covered.has(r.id)).sort((a, b) => cookMinutes(b) - cookMinutes(a))
-      .forEach((r) => out.push({ kind: 'recipe', title: r.title, mins: cookMinutes(r) + 5 * r.steps.length, approx: true, subs: [{ r, js: r.steps.map((_, j) => j) }] }));
+      .forEach((r) => {
+        const sc = r.steps.map((st) => scaleTime(st, durationOf(st)?.maxMins || 5, kOf[r.id] || 1, setup, pansOf(r)));
+        out.push({ kind: 'recipe', title: r.title, mins: sc.reduce((a, x) => a + x.mins, 0), approx: true, note: sc.map((x) => x.note).filter(Boolean).join(' · '), subs: [{ r, js: r.steps.map((_, j) => j) }] });
+      });
     out.push({ kind: 'pack', title: app.settings.audience === 'group' ? 'Hold & serve' : 'Pack it up', mins: 15, approx: true });
     out.forEach((st) => (st.label = `${fmtMins(st.mins, st.approx)}${st.mins ? ' · ' : ''}${st.title}`));
     return out;
@@ -129,7 +141,10 @@
     if (kind !== 's') return null;
     const r = recipes.find((x) => x.id === id), text = r?.steps[Number(j)];
     const d = text && durationOf(text);
-    return d ? { label: `${shortTitle(r.title)}: ${firstWords(text)}`, ...d } : null;
+    if (!d) return null;
+    // a bigger batch: time per round (pans in the oven) or the scaled time (bigger roast, bigger pot)
+    const k = kOf[r.id] || 1, lo = scaleTime(text, d.mins, k, setup, pansOf(r)), hi = scaleTime(text, d.maxMins, k, setup, pansOf(r));
+    return { label: `${shortTitle(r.title)}: ${firstWords(text)}${lo.rounds > 1 ? ' (round 1)' : ''}`, mins: lo.perRound, maxMins: hi.perRound };
   }
   const shortTitle = (t) => String(t).split(/,|\s[–—-]\s/)[0];
 
@@ -149,6 +164,21 @@
     steps.forEach((st, i) => { if (st.kind === 'pack') { out[i] = serve; return; } out[i] = new Date(t); t = new Date(t.getTime() + (st.mins || 0) * 60000); });
     return out;
   });
+  const ready = $derived(!!app.plan.kitchenSetup?.ready && !!app.plan.kitchen);
+  let editSetup = $state(false);
+  let form = $state({ serveAt: untrack(() => app.plan.serveAt) || '18:00', kitchen: untrack(() => app.plan.kitchen) || '', ovens: untrack(() => app.plan.kitchenSetup?.ovens) || 1, racks: untrack(() => app.plan.kitchenSetup?.racks) || 2 });
+  async function saveSetup() {
+    const k = form.kitchen;
+    try {
+      await patchPlan({ serveAt: form.serveAt, kitchen: k, kitchenSetup: { ovens: Math.max(1, +form.ovens || 1), racks: Math.max(1, +form.racks || 1), commercial: k === 'commercial', ready: true } });
+      serveAt = form.serveAt; editSetup = false; resume();
+    } catch (e) { err = e.message; }
+  }
+  // live clock for "time left"
+  let now = $state(Date.now());
+  $effect(() => { const t = setInterval(() => (now = Date.now()), 30000); return () => clearInterval(t); });
+  let serveDate = $derived.by(() => { const [h, m] = String(serveAt || '18:00').split(':').map(Number); const d = new Date(now); d.setHours(h || 18, m || 0, 0, 0); return d; });
+  const left = (ms) => { const m = Math.round(ms / 60000); if (m <= 0) return 'serving time!'; return fmtMins(m) + ' to serve'; };
   function setServe(v) { serveAt = v; patchPlan({ serveAt: v }).catch(() => {}); }
   function setKitchen(v) { patchPlan({ kitchen: v }).catch((e) => (err = e.message)); }
   const KITCHENS = [['home', '🏠 Home kitchen'], ['commercial', '🏫 Church / commercial'], ['both', '🚗 Prep at home, serve on site']];
@@ -247,7 +277,9 @@
     {/if}
     {#each e.js as j}
       {@const d = durationOf(r.steps[j])}
-      {@render box(`s|${r.id}|${j}`, `${scaleStepHtml(r.steps[j], k)}${d ? ` <span class="pill acc">⏱ ${d.mins === d.maxMins ? d.mins : `${d.mins}–${d.maxMins}`} min timer</span>` : ''}`)}
+      {@const lo = d ? scaleTime(r.steps[j], d.mins, k, setup, pansOf(r)) : null}
+      {@const hi = d ? scaleTime(r.steps[j], d.maxMins, k, setup, pansOf(r)) : null}
+      {@render box(`s|${r.id}|${j}`, `${scaleStepHtml(r.steps[j], k)}${d ? ` <span class="pill acc">⏱ ${lo.perRound === hi.perRound ? lo.perRound : `${lo.perRound}–${hi.perRound}`} min${lo.rounds > 1 ? ` × ${lo.rounds} rounds` : ''}</span>${lo.note ? `<br><span class="small muted">📏 ${esc(lo.note)}</span>` : ''}` : ''}`)}
     {/each}
     {#if e.js.includes(r.steps.length - 1)}
       {#if r.fridge || r.freeze}<p class="small muted">{r.fridge ? `🧊 Fridge: ${r.fridge}` : ''}{r.fridge && r.freeze ? ' · ' : ''}{r.freeze ? `❄️ Freezer: ${r.freeze}` : ''}</p>{/if}
@@ -282,14 +314,30 @@
         </div>
         <div class="small" style="margin-top:8px">{#each recipes as r}<div>• <b>{shortTitle(r.title)}</b> — {por[r.id]?.portions || r.servings || '?'} portions = {times(kOf[r.id])}{r.servings ? ` (recipe serves ${r.servings})` : ''}</div>{/each}</div>
         <p class="small muted" style="margin:6px 0 0">Every amount in the steps below is already scaled for your group.</p>
-        <p class="sentence small" style="margin:8px 0 0">Serving at <input class="inl" type="time" value={serveAt} onchange={(e) => setServe(e.currentTarget.value)} /> → start by <b>{starts[0] ? clock(starts[0]) : '—'}</b>.</p>
-        <p class="small" style="margin:6px 0 0">Where are you cooking this one?</p>
-        <div class="row" style="gap:4px">{#each KITCHENS as [k, l]}<button class="chip" class:on={kitchen === k} onclick={() => setKitchen(k)}>{l}</button>{/each}</div>
-        {#if kitchen === 'home'}<p class="small muted" style="margin:6px 0 0">One oven: the steps run oven dishes back to back. Bake anything that holds well first and keep it warm at 170°F.</p>
-        {:else if kitchen === 'commercial'}<p class="small muted" style="margin:6px 0 0">Use full hotel pans (about 4× a 9×13) and sheet pans; split the steps between helpers.</p>
-        {:else if kitchen === 'both'}<p class="small muted" style="margin:6px 0 0">Cook ahead, chill fast, transport cold in coolers, and reheat on site to 165°F. Leave an extra 45 min to reheat.</p>{/if}
+        {#if ready && !editSetup}
+          <p class="small" style="margin:8px 0 0">🍽 Serving at <b>{clock(serveDate)}</b> · start by <b>{starts[0] ? clock(starts[0]) : '—'}</b> · {KITCHENS.find((x) => x[0] === kitchen)?.[1] || ''} · {setup.ovens} oven{setup.ovens === 1 ? '' : 's'}, {setup.racks} pans each <button class="quiet" onclick={() => (editSetup = true)}>Change</button></p>
+        {/if}
       </div>
+      {#if !ready || editSetup}
+        <div class="card nocollapse setupcard">
+          <h3 style="margin-top:0">Before you start: your kitchen</h3>
+          <p class="small muted" style="margin-top:0">This sets the timeline and how many pans go in at once, so the steps fit your space.</p>
+          <p class="sentence small">Serving at <input class="inl" type="time" bind:value={form.serveAt} /></p>
+          <p class="small" style="margin:6px 0 4px">Where are you cooking this one?</p>
+          <div class="row" style="gap:4px">{#each KITCHENS as [k, l]}<button class="chip" class:on={form.kitchen === k} onclick={() => { form.kitchen = k; Object.assign(form, { ovens: KITCHEN_DEFAULTS[k].ovens, racks: KITCHEN_DEFAULTS[k].racks }); }}>{l}</button>{/each}</div>
+          {#if form.kitchen}
+            <p class="sentence small" style="margin-top:8px">
+              <input class="inl" type="number" min="1" max="10" bind:value={form.ovens} style="width:3em" /> oven{Number(form.ovens) === 1 ? '' : 's'}, each fits
+              <input class="inl" type="number" min="1" max="20" bind:value={form.racks} style="width:3em" /> sheet pans or baking dishes at once.
+            </p>
+            <p class="small muted" style="margin:0">{form.kitchen === 'commercial' ? 'Commercial ovens usually fit 6–8 full sheet pans (or 2–4 hotel pans per deck).' : 'Most home ovens fit 2 pans (two racks); 3 if you have a third rack and rotate.'}{form.kitchen === 'both' ? ' Cook at home, chill fast, carry it cold, and reheat on site to 165°F — allow an extra 45 min.' : ''}</p>
+          {/if}
+          <div class="row" style="margin-top:10px"><button onclick={saveSetup} disabled={!form.kitchen || !form.serveAt}>{ready ? 'Save' : 'Start cooking →'}</button>{#if editSetup}<button class="quiet" onclick={() => (editSetup = false)}>Cancel</button>{/if}</div>
+        </div>
+      {/if}
     {/if}
+    {#if big && !ready}
+    {:else}
     {#if mode !== 'simple'}
     <p class="small muted" style="margin:-2px 0 6px">{doneCount} of {allKeys.length} done · about {fmtMins(totalMins)} total{leftMins && leftMins < totalMins ? `, ${fmtMins(leftMins)} to go` : ''}</p>
     <div style="height:6px;background:#efe7dc;border-radius:99px;overflow:hidden;margin-bottom:10px"><div style="height:100%;background:var(--green);width:{allKeys.length ? (doneCount / allKeys.length) * 100 : 0}%"></div></div>
@@ -307,10 +355,20 @@
     {/each}
 
     {#if mode === 'steps' && cur}
+     {#if big}
+       {@const behind = starts[idx] ? Math.round((now - starts[idx].getTime()) / 60000) : 0}
+       <div class="statusbar">
+         <div><b>⏳ {left(serveDate.getTime() - now)}</b><span>serving at {clock(serveDate)}</span></div>
+         <div><b>{allKeys.length - doneCount}</b><span>items left · {steps.filter((st) => !stepDone(st)).length} steps</span></div>
+         <div><b class:late={behind > 5 && !stepDone(cur)}>{behind > 5 && !stepDone(cur) ? `${fmtMins(behind)} behind` : behind < -5 ? `${fmtMins(-behind)} ahead` : 'On time'}</b><span>this step {starts[idx] ? `starts ${clock(starts[idx])}` : ''}</span></div>
+         {#if steps[idx + 1]}<div class="next"><span>Up next</span><b>{starts[idx + 1] ? clock(starts[idx + 1]) + ' · ' : ''}{steps[idx + 1].title}</b></div>{/if}
+       </div>
+     {/if}
      <div class="prep-grid"><div>
       <p class="small muted" style="margin:0">Step {idx + 1} of {steps.length}</p>
       <p class="small" style="margin:6px 0 0;color:var(--accent);font-weight:650">⏱ {fmtMins(cur.mins, cur.approx) || '—'}{big && starts[idx] ? ` · ${cur.kind === 'pack' ? 'serve' : 'start'} at ${clock(starts[idx])}` : ''}</p>
       <h2 style="margin:2px 0 10px">{stepDone(cur) ? '✓ ' : ''}{cur.title}</h2>
+      {#if cur.note}<p class="note small" style="margin:-4px 0 10px">📏 {cur.note}{cur.base && cur.base !== cur.mins ? ` (the recipe says ${fmtMins(cur.base)} for one batch)` : ''}</p>{/if}
 
       {#if cur.kind === 'setup'}
         <div class="card">
@@ -430,6 +488,7 @@
           <details style="border-top:1px solid var(--line);padding:8px 0"><summary><b>{r.title}</b></summary>{@render recipeBlock(r)}</details>
         {/each}
       </div>
+    {/if}
     {/if}
     {/if}
   {/if}
