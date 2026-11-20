@@ -50,6 +50,17 @@ export async function signIn(email, password) {
   const { error } = await sb.auth.signInWithPassword({ email: email.trim(), password });
   if (error) throw new Error(authMsg(error.message));
 }
+/** Forgot password: email a 6-digit reset code (no link, so email scanners can't use it up). */
+export async function sendResetCode(email) {
+  const { error } = await sb.auth.resetPasswordForEmail(email.trim());
+  if (error) throw new Error(/rate|seconds/i.test(error.message) ? 'Please wait a minute before asking for another code.' : error.message);
+}
+export async function resetWithCode(email, code, password) {
+  const { error } = await sb.auth.verifyOtp({ email: email.trim(), token: code.replace(/\D/g, ''), type: 'recovery' });
+  if (error) throw new Error(/expired|invalid/i.test(error.message) ? 'That code is wrong or expired. Send a new one.' : error.message);
+  const { error: e2 } = await sb.auth.updateUser({ password });
+  if (e2) throw new Error(e2.message);
+}
 export async function signUp(email, password) {
   const { data, error } = await sb.auth.signUp({ email: email.trim(), password });
   if (error) throw new Error(authMsg(error.message));

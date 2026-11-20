@@ -1,4 +1,5 @@
 <script>
+  import InstallApp from '../components/InstallApp.svelte';
   import { app, saveSettings, saveSerpKey, testSerpKey, invite, signOut, saveStore, toast } from '../lib/db.svelte.js';
   import { trip } from '../lib/trip.svelte.js';
   let { go } = $props();
@@ -68,6 +69,7 @@
 
   {:else}
     <h1>Settings</h1>
+    <InstallApp />
     <div class="card">
       <label class="f">Home address (trips end here)<input bind:value={s.homeAddress} /></label>
       <div class="grid2">

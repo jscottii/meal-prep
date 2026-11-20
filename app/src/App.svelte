@@ -35,6 +35,7 @@
     {:else}<Trip {go} />{/if}
   {/key}
   <nav class="tabs">
+    <div class="brand">🛒 Meal Prep Shopper</div>
     {#each TABS as [k, ic, label]}<button class:on={page === k} onclick={() => go(k)}><span class="ic">{ic}</span>{label}</button>{/each}
   </nav>
 {/if}

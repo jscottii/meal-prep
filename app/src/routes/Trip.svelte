@@ -1,4 +1,7 @@
 <script>
+  import InstallApp from '../components/InstallApp.svelte';
+  import { install } from '../lib/install.svelte.js';
+  let hideInstall = $state(localStorage.getItem('mp-hide-install') === '1' || matchMedia('(min-width: 900px)').matches);
   import { app, need, portions, itemById, setHave, toast } from '../lib/db.svelte.js';
   import { trip, planTrip, chosen, drawLine, useMyLocation, startAddress } from '../lib/trip.svelte.js';
   import { directionsUrl } from '../lib/maps.js';
@@ -28,6 +31,7 @@
 </script>
 
 <div class="page">
+  {#if !hideInstall && !install.installed}<div style="position:relative"><InstallApp compact /><button class="quiet small" style="position:absolute;right:4px;bottom:2px" onclick={() => { hideInstall = true; localStorage.setItem('mp-hide-install', '1'); }}>Not now</button></div>{/if}
   <div class="spread"><h1>This week's trip</h1><button class="quiet" onclick={() => go('plan')}>Plan a new week →</button></div>
   <p class="muted small">
     {active.length} recipe{active.length === 1 ? '' : 's'}{Object.keys(por).length ? ` · ${Object.values(por).reduce((a, x) => a + x.portions, 0)} portions planned` : ''} · {left} item{left === 1 ? '' : 's'} to buy{bought.length ? `, ${bought.length} already bought` : ''}

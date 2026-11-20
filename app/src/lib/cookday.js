@@ -325,3 +325,51 @@ export function alignSteps(r, timeline, others = []) {
   for (let j = n - 1; j > 0; j--) out[j - 1] = from[j][out[j]];
   return out.map((i) => timeline[i].idx);
 }
+
+/* ---------------- pans and appliances ---------------- */
+const EQUIP = [
+  ['Sheet pans', /\bsheet pans?\b|\bbaking sheets?\b|\broast(?:ed|ing)?\b(?!.*\bdutch oven\b)/i, 'roast'],
+  ['9×13 baking dish', /\b9\s*[x×]\s*13\b/i],
+  ['8×8 baking dish', /\b8\s*[x×]\s*8\b/i],
+  ['Loaf pan', /\bloaf pan\b/i],
+  ['Muffin tin', /\bmuffin (?:tin|pan|cups?)\b/i],
+  ['Pie dish', /\bpie (?:dish|plate|pan)\b/i],
+  ['Dutch oven', /\bdutch oven\b|\bbraise\b/i],
+  ['Large pot', /\bboil\b|\bstockpot\b|\blarge pot\b|\bsoup\b|\bpasta\b|\brigatoni|\bnoodles?\b/i],
+  ['Saucepan', /\bsaucepan\b|\bsimmer\b(?!.*soup)|\brice\b|\bfarro\b|\bquinoa\b|\bcompote\b/i],
+  ['Large skillet', /\bskillet\b|\bfrying pan\b|\bsaut[eé]\b|\bbrown (?:the )?(?:sausage|beef|turkey|meat|pork)\b|\bcrisp the bacon\b|\bscramble/i],
+  ['Blender', /\bblend(?:er|ed)?\b|\bpur[eé]e\b/i],
+  ['Food processor', /\bfood processor\b|\bpulse\b/i],
+  ['Slow cooker / Instant Pot', /\bslow cooker\b|\bcrock ?pot\b|\binstant pot\b|\bpressure cook/i],
+  ['Stand or hand mixer', /\bmixer\b|\bbeat (?:until|on)\b/i],
+  ['Colander', /\bdrain(?:ed)?\b|\brinsed?\b/i],
+  ['Box grater / microplane', /\bgrat(?:e|ed)\b|\bzest\b|\bshred(?:ded)? (?:cheddar|mozzarella|cheese|carrot|cabbage)/i],
+  ['Mixing bowls + whisk', /\bwhisk\b|\bmixing bowl\b|\btoss\b|\bstir together\b/i],
+  ['Masher', /\bmash\b/i],
+  ['Jars', /\bjars?\b/i],
+  ['Meal-prep containers', /\bportion\b|\bcontainers?\b|\bdivide\b/i],
+  ['Foil / plastic wrap', /\bfoil\b|\bwrap (?:twice|tightly|well)\b|\bcovered\b/i],
+  ['Parchment paper', /\bparchment\b/i],
+  ['Meat thermometer', /\b16[05]\s*°?\s*F\b|\binternal temp/i]
+];
+/**
+ * What to pull out before you start: [{ name, recipes:[titles], count }], plus oven temperatures in the order they're needed.
+ */
+export function equipmentFor(recipes) {
+  const found = new Map(), temps = [];
+  recipes.forEach((r) => {
+    const text = [...(r.steps || []), ...(r.ing || [])].join(' \n ');
+    EQUIP.forEach(([name, re]) => {
+      if (!re.test(text)) return;
+      const e = found.get(name) || { name, recipes: [], count: 1, optional: true };
+      if (!(/slow cooker/i.test(name) && /\bor (?:a |in a )?slow cooker\b/i.test(text))) e.optional = false;
+      e.recipes.push(r.title);
+      if (/8\s*[x×]\s*8/.test(name) && /\btwo 8\s*[x×]\s*8/i.test(text)) e.count = Math.max(e.count, 2);
+      found.set(name, e);
+    });
+    (r.steps || []).forEach((s) => { const m = String(s).match(/(\d{3})\s*°\s*F/); if (m && !/from frozen|reheat/i.test(s) && !temps.includes(m[1] + '°F')) temps.push(m[1] + '°F'); });
+  });
+  const order = EQUIP.map((e) => e[0]);
+  temps.sort((a, b) => parseInt(b) - parseInt(a));
+  return { items: [...found.values()].map((e) => ({ ...e, optional: /slow cooker/i.test(e.name) && e.optional })).sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name)), temps };
+}

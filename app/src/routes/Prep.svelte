@@ -4,8 +4,8 @@
 
 <script>
   import { app, portions, guideFor, loadGuide, updatePrep, toast } from '../lib/db.svelte.js';
-  import { scaleLine, scaleStepHtml, prepLists, cookMinutes, alignSteps, isPrepStep, durationOf } from '../lib/cookday.js';
-  import { unlockAudio } from '../lib/timers.js';
+  import { scaleLine, scaleStepHtml, prepLists, cookMinutes, alignSteps, isPrepStep, durationOf, equipmentFor } from '../lib/cookday.js';
+  import { unlockAudio, holdAwake } from '../lib/timers.js';
   let { go } = $props();
 
   const SLOTS = ['breakfast', 'lunch', 'dinner', 'snack'];
@@ -27,6 +27,16 @@
 
   let done = $derived(app.plan.prepDone || {});
   let lists = $derived(prepLists(recipes, kOf, app.items));
+  let gear = $derived(equipmentFor(recipes));
+
+  // keep the screen on while this tab is open (your choice, remembered on this device)
+  let awake = $state(localStorage.getItem('mp-awake') !== '0');
+  $effect(() => {
+    localStorage.setItem('mp-awake', awake ? '1' : '0');
+    if (!awake) return;
+    const stop = holdAwake();
+    return stop;
+  });
   const firstWords = (t) => { const w = String(t).split(/[.;:]/)[0]; return w.length > 60 ? w.slice(0, 57) + '…' : w; };
 
   /* ---------- the step-by-step plan: the game plan's own steps, with each recipe's matching steps inside ---------- */
@@ -70,7 +80,7 @@
   const spiceKeys = () => lists.spices.map((x) => `sp|${x.id}`);
   // the checkmarks that belong to a step, so it can show as done
   function stepKeys(st) {
-    if (st.kind === 'setup') return lists.setup.flatMap((g, gi) => g.items.map((_, ii) => `u|${gi}|${ii}`));
+    if (st.kind === 'setup') return [...gear.items.map((e) => `e|${e.name}`), 'e|basics', ...lists.setup.flatMap((g, gi) => g.items.map((_, ii) => `u|${gi}|${ii}`))];
     if (st.kind === 'knife') return knifeKeys();
     if (st.kind === 'spices') return spiceKeys();
     if (st.kind === 'time') return [st.key, ...(st.knife ? knifeKeys() : []), ...(st.spices ? spiceKeys() : []), ...subKeys(st)];
@@ -198,7 +208,7 @@
   </div>
 {/snippet}
 
-<div class="page" style="padding-bottom:calc(var(--nav) + 90px)">
+<div class="page wide" style="padding-bottom:calc(var(--nav) + 90px)">
   <h1>Cook day</h1>
   {#if !recipes.length}
     <p class="muted">No recipes picked for this week yet.</p>
@@ -209,8 +219,11 @@
         <button class:on={mode === 'steps'} onclick={resume}>Step by step</button>
         <button class:on={mode === 'overview'} onclick={() => (mode = 'overview')}>Overview</button>
       </div>
-      <span class="small muted">{doneCount} of {allKeys.length} done</span>
+      <label class="row small" style="gap:6px;cursor:pointer" title="Stops the screen from dimming while you cook">
+        <span class="switch"><input type="checkbox" bind:checked={awake} /><span></span></span> Keep screen on
+      </label>
     </div>
+    <p class="small muted" style="margin:-2px 0 6px">{doneCount} of {allKeys.length} done</p>
     <div style="height:6px;background:#efe7dc;border-radius:99px;overflow:hidden;margin-bottom:10px"><div style="height:100%;background:var(--green);width:{allKeys.length ? (doneCount / allKeys.length) * 100 : 0}%"></div></div>
     {#if err}<div class="err">⚠️ {err}</div>{/if}
     {#each missingGuides as g}
@@ -219,12 +232,17 @@
     {/each}
 
     {#if mode === 'steps' && cur}
+     <div class="prep-grid"><div>
       <p class="small muted" style="margin:0">Step {idx + 1} of {steps.length}</p>
       <h2 style="margin:2px 0 10px">{stepDone(cur) ? '✓ ' : ''}{cur.title}</h2>
 
       {#if cur.kind === 'setup'}
         <div class="card">
-          <p class="small" style="margin-top:0">Clear the counters, empty the dishwasher, and get out your sheet pans, pots, cutting board and storage containers.</p>
+          <p class="small" style="margin-top:0">Clear the counters and empty the dishwasher so you have somewhere to put dirty pans.</p>
+          {#if gear.temps.length}<p class="small"><b>🔥 Oven today:</b> {gear.temps.join(', ')} — preheat to the first one in your plan.</p>{/if}
+          <h3 style="margin-top:10px">🍳 Pans and appliances</h3>
+          {#each gear.items as e}{@render box(`e|${e.name}`, `<b>${esc(e.name)}</b>${e.count > 1 ? ` ×${e.count}` : ''}${e.optional ? ' <span class="pill">optional</span>' : ''} <span class="muted">· ${esc(e.recipes.map(shortTitle).join(', '))}</span>`, true)}{/each}
+          {@render box('e|basics', '<b>Cutting board, chef’s knife, measuring cups and spoons</b>', true)}
           {#each lists.setup as g, gi}
             <h3 style="margin-top:10px">{g.what}</h3>
             {#each g.items as it, ii}{@render box(`u|${gi}|${ii}`, `${esc(it.text)} <span class="muted">· ${esc(it.recipe)}</span>`, true)}{/each}
@@ -264,6 +282,11 @@
         <select value={idx} onchange={(e) => { at = Number(e.currentTarget.value); window.scrollTo(0, 0); }} aria-label="Jump to step">{#each steps as s, i}<option value={i}>{i + 1}. {stepDone(s) ? '✓ ' : ''}{s.title}</option>{/each}</select>
         <button onclick={doneNext}>{idx >= steps.length - 1 ? 'Done ✓' : 'Done → Next'}</button>
       </div>
+     </div>
+     <aside class="prep-aside card">
+       <h3>All steps</h3>
+       {#each steps as s, i}<button class:on={i === idx} class:done={stepDone(s)} onclick={() => { at = i; window.scrollTo(0, 0); }}>{stepDone(s) ? '✓' : i + 1}. {s.title}</button>{/each}
+     </aside></div>
     {:else}
       <button style="width:100%;margin-bottom:10px" onclick={resume}>▶ {doneCount ? 'Pick up where you left off' : 'Start cooking'}: step {firstUndone + 1} · {steps[firstUndone]?.title}</button>
       <div class="card">

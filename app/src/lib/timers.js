@@ -30,3 +30,12 @@ export async function keepAwake(on) {
     if (!on && lock) { await lock.release(); lock = null; }
   } catch {}
 }
+
+/** Hold the screen awake until the returned function is called; re-takes the lock when you come back to the app. */
+export function holdAwake() {
+  let l = null, live = true;
+  const take = async () => { try { if (live && document.visibilityState === 'visible' && 'wakeLock' in navigator && !l) { l = await navigator.wakeLock.request('screen'); l.addEventListener('release', () => (l = null)); } } catch {} };
+  const vis = () => take();
+  take(); document.addEventListener('visibilitychange', vis);
+  return () => { live = false; document.removeEventListener('visibilitychange', vis); try { l?.release(); } catch {} l = null; };
+}
