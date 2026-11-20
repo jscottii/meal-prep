@@ -18,7 +18,7 @@ export const DEFAULT_SETTINGS = {
 export const app = $state({ pantry: [],
   ready: false, session: null, user: null, household: null, error: '', toast: '',
   settings: { ...DEFAULT_SETTINGS }, stores: [], items: [], prices: {}, recipes: [], plan: { household: 3, days: [] }, purchases: [],
-  members: [], invites: [], hasSerpKey: false, hasInstacartKey: false, households: [], myInvites: [], serpUsage: { n: 0, limit: 230 }
+  members: [], invites: [], hasSerpKey: false, hasInstacartKey: false, households: [], myInvites: [], pendingJoin: null, serpUsage: { n: 0, limit: 230 }
 });
 
 /* ---------------- derived helpers ---------------- */
@@ -89,12 +89,19 @@ export async function start() {
 async function boot() {
   try {
     app.error = '';
+    // opened an invite link: a brand-new account joins that household instead of starting its own
+    const code = pendingCode();
+    if (code) {
+      const { data: mine } = await sb.rpc('list_households');
+      if (!mine?.length) { const { error: je } = await sb.rpc('join_with_code', { code }); clearPendingCode(); if (je) app.error = je.message; }
+    }
     const { data, error } = await sb.rpc('ensure_household');
     if (error) fail(error);
     app.household = data.household_id;
     if (data.created) await seedHousehold();
     await loadAll();
     loadHouseholds();
+    checkPendingJoin();
     subscribe();
   } catch (e) { app.error = String(e.message || e); }
   app.ready = true;
@@ -540,6 +547,30 @@ export async function renameHousehold(name) {
   const { error } = await sb.from('households').update({ name: name.trim() || 'Our household' }).eq('id', app.household); if (error) fail(error);
   app.households = app.households.map((h) => (h.id === app.household ? { ...h, name: name.trim() } : h));
 }
+/* home codes and invite links */
+export const pendingCode = () => { try { return localStorage.getItem('wfd-join') || ''; } catch { return ''; } };
+export const clearPendingCode = () => { try { localStorage.removeItem('wfd-join'); } catch {} };
+export const cleanCode = (c) => String(c || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(-6);
+export const showCode = (c) => (c ? `WFD-${c}` : '');
+export const inviteLink = (c) => `${APP_URL}#join=${c}`;
+export async function getJoinCode() { const { data, error } = await sb.rpc('get_join_code'); if (error) fail(error); return data; }
+export async function resetJoinCode() { const { data, error } = await sb.rpc('reset_join_code'); if (error) fail(error); return data; }
+export async function peekCode(code) {
+  const { data, error } = await sb.rpc('peek_join_code', { code: cleanCode(code) }); if (error) fail(error);
+  if (!data) throw new Error("That code doesn't match a household. Check it, or ask for a new one.");
+  return data;
+}
+export async function joinWithCode(code) {
+  const { error } = await sb.rpc('join_with_code', { code: cleanCode(code) }); if (error) fail(error);
+  clearPendingCode(); reloadApp();
+}
+// signed in and opened someone's invite link: ask before joining
+async function checkPendingJoin() {
+  const code = pendingCode(); if (!code) return;
+  try { const p = await peekCode(code); if (p.already) { clearPendingCode(); return; } app.pendingJoin = { code: cleanCode(code), ...p }; }
+  catch (e) { clearPendingCode(); toast(e.message); }
+}
+
 export const currentHousehold = () => app.households.find((h) => h.is_current) || app.households.find((h) => h.id === app.household);
 
 export async function invite(email) {

@@ -1,6 +1,7 @@
 <script>
-  import { signIn, signUp, sendResetCode, resetWithCode } from '../lib/db.svelte.js';
-  let mode = $state('in'), email = $state(localStorage.getItem('mp-email') || ''), password = $state(''), busy = $state(false), err = $state('');
+  import { signIn, signUp, sendResetCode, resetWithCode, pendingCode, showCode, cleanCode } from '../lib/db.svelte.js';
+  const joining = pendingCode();
+  let mode = $state(pendingCode() ? 'up' : 'in'), email = $state(localStorage.getItem('mp-email') || ''), password = $state(''), busy = $state(false), err = $state('');
   let code = $state(''), sent = $state(false), info = $state('');
   const setMode = (m) => { mode = m; err = ''; info = ''; sent = false; code = ''; password = ''; };
   async function go(e) {
@@ -28,6 +29,7 @@
   <img src="icon.svg" alt="" width="64" height="64" style="border-radius:14px" />
   <h1>What's for Dinner</h1>
   <p class="muted">Plan the week, shop it in the fewest, cheapest stops, and cook it all at once.</p>
+  {#if joining}<div class="ok small">You're joining a household with code <b>{showCode(cleanCode(joining))}</b>. Create an account (or sign in) and you'll be added.</div>{/if}
   {#if mode === 'reset'}
     <h2 style="margin-top:14px">Reset your password</h2>
     {#if !sent}

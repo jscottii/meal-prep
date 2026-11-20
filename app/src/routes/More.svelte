@@ -1,12 +1,19 @@
 <script>
   import InstallApp from '../components/InstallApp.svelte';
-  import { app, saveSettings, saveSerpKey, testSerpKey, saveInstacartKey, MAX_HOUSEHOLDS, switchHousehold, createHousehold, acceptInvite, declineInvite, leaveHousehold, renameHousehold, currentHousehold, invite, signOut, deleteAccount, saveStore, toast } from '../lib/db.svelte.js';
+  import { app, saveSettings, saveSerpKey, testSerpKey, saveInstacartKey, MAX_HOUSEHOLDS, switchHousehold, createHousehold, acceptInvite, declineInvite, leaveHousehold, renameHousehold, currentHousehold, getJoinCode, resetJoinCode, peekCode, joinWithCode, showCode, inviteLink, invite, signOut, deleteAccount, saveStore, toast } from '../lib/db.svelte.js';
   import { trip } from '../lib/trip.svelte.js';
   let { go } = $props();
   let icKey = $state('');
   let hhName = $state(''), newHh = $state(''), hhBusy = $state(''), hhErr = $state(''), leaving = $state('');
   $effect(() => { if (!hhName && currentHousehold()) hhName = currentHousehold().name; });
   const atMax = () => app.households.length >= MAX_HOUSEHOLDS;
+  let code = $state(''), codeAsk = $state(false), joinCode = $state(''), joinPeek = $state(null);
+  $effect(() => { if (tab === 'settings' && !code) getJoinCode().then((c) => (code = c)).catch(() => {}); });
+  async function copyLink() { try { await navigator.clipboard.writeText(inviteLink(code)); toast('✓ Invite link copied'); } catch { toast(inviteLink(code)); } }
+  async function shareLink() {
+    const text = `Join our household on WFD (What's for Dinner): ${inviteLink(code)}\nOr enter code ${showCode(code)} in More → Settings.`;
+    try { if (navigator.share) await navigator.share({ title: 'Join our WFD household', text }); else { await navigator.clipboard.writeText(text); toast('✓ Invite copied'); } } catch {}
+  }
   async function hh(label, fn) { hhBusy = label; hhErr = ''; try { await fn(); } catch (e) { hhErr = e.message; } hhBusy = ''; }
   async function icSave() { try { await saveInstacartKey(icKey); icKey = ''; toast('✓ Instacart key saved'); } catch (e) { toast(e.message); } }
   let delAsk = $state(false), delWord = $state(''), delBusy = $state(false), delErr = $state('');
@@ -126,6 +133,19 @@
       </label>
       {#if app.members.length > 1}<p class="small muted">Members: {app.members.map((m) => m.email).join(', ')}</p>{/if}
       {#if app.invites.length}<p class="small muted">Invited: {app.invites.map((i) => i.email).join(', ')} (they join when they sign in)</p>{/if}
+      <h3 style="margin-top:12px">Invite with a link or code</h3>
+      {#if code}
+        <div class="row" style="align-items:center">
+          <span style="font:700 26px/1 ui-monospace,Menlo,monospace;letter-spacing:3px;background:#fff;border:1px dashed var(--line);border-radius:10px;padding:10px 14px">{showCode(code)}</span>
+          <button onclick={shareLink}>Share invite</button>
+          <button class="ghost" onclick={copyLink}>Copy link</button>
+        </div>
+        <p class="small muted">Anyone with this link or code can join <b>{currentHousehold()?.name}</b>. New people create an account from the link; people already on WFD enter the code under Your households.
+          {#if !codeAsk}<button class="quiet" onclick={() => (codeAsk = true)}>Make a new code</button>
+          {:else}<button class="quiet" onclick={() => hh('code', async () => { code = await resetJoinCode(); codeAsk = false; toast('✓ New code; the old one no longer works'); })}>Yes, replace it</button><button class="quiet" onclick={() => (codeAsk = false)}>Cancel</button>{/if}
+        </p>
+      {:else}<p class="small muted"><span class="spinner"></span> Getting your code…</p>{/if}
+      <h3 style="margin-top:12px">Or invite by email</h3>
       <div class="row"><input class="grow" type="email" placeholder="Invite someone by email" bind:value={wife} /><button onclick={sendInvite} disabled={invBusy || !/@/.test(wife)}>Invite</button></div>
       <p class="small muted">Then send them the app link. They sign in with that email and see the same plans and lists, live. Someone already using WFD sees the invite under Your households.</p>
     </div>
@@ -159,6 +179,13 @@
         {/each}
         {#if atMax()}<p class="small muted">You're in {MAX_HOUSEHOLDS} households, the most allowed. Leave one to join another.</p>{/if}
       {/if}
+
+      <h3 style="margin-top:14px">Join with a code</h3>
+      <div class="row"><input class="grow" placeholder="WFD-ABC123" bind:value={joinCode} disabled={atMax()} oninput={() => (joinPeek = null)} style="text-transform:uppercase" />
+        {#if !joinPeek}<button class="ghost" disabled={atMax() || joinCode.replace(/[^A-Za-z0-9]/g, '').length < 6 || !!hhBusy} onclick={() => hh('peek', async () => { joinPeek = await peekCode(joinCode); })}>Look up</button>
+        {:else if joinPeek.already}<span class="small muted">You're already in “{joinPeek.name}”.</span>
+        {:else}<button disabled={!!hhBusy} onclick={() => hh('join', () => joinWithCode(joinCode))}>{#if hhBusy === 'join'}<span class="spinner"></span>{/if} Join “{joinPeek.name}”</button>{/if}
+      </div>
 
       <h3 style="margin-top:14px">Start another household</h3>
       <div class="row"><input class="grow" placeholder="e.g. Mom & Dad, Youth group dinners" bind:value={newHh} disabled={atMax()} />

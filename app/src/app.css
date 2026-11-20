@@ -120,3 +120,5 @@ nav.tabs button.on { color: var(--accent); }
 .hhbar button { font-size: 13px; }
 .brand .hh { display: block; margin-top: 8px; background: #f1ebe2; color: var(--ink); font-size: 13px; font-weight: 600; padding: 6px 10px; border-radius: 8px; }
 @media (min-width: 900px) { .hhbar { display: none; } }
+.modal-back { position: fixed; inset: 0; background: #0006; display: grid; place-items: center; z-index: 100; padding: 16px; }
+.modal { max-width: 440px; width: 100%; margin: 0; box-shadow: 0 10px 40px #0003; }
