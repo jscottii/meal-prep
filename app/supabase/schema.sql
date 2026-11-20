@@ -239,3 +239,18 @@ alter table pantry replica identity full;
 do $$ begin
   alter publication supabase_realtime add table pantry;
 exception when duplicate_object then null; end $$;
+
+-- ---------------- Instacart: one key per household, write-only like SerpApi ----------------
+alter table household_secrets add column if not exists instacart_key text;
+create or replace function set_instacart_key(k text) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if my_household() is null then raise exception 'no household'; end if;
+  insert into household_secrets(household_id, instacart_key, updated_at) values (my_household(), k, now())
+  on conflict (household_id) do update set instacart_key = excluded.instacart_key, updated_at = now();
+end $$;
+create or replace function has_instacart_key() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists(select 1 from household_secrets where household_id = my_household() and coalesce(instacart_key,'') <> '')
+$$;
+grant execute on function set_instacart_key(text), has_instacart_key() to authenticated;

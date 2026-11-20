@@ -18,7 +18,7 @@ export const DEFAULT_SETTINGS = {
 export const app = $state({ pantry: [],
   ready: false, session: null, user: null, household: null, error: '', toast: '',
   settings: { ...DEFAULT_SETTINGS }, stores: [], items: [], prices: {}, recipes: [], plan: { household: 3, days: [] }, purchases: [],
-  members: [], invites: [], hasSerpKey: false, serpUsage: { n: 0, limit: 230 }
+  members: [], invites: [], hasSerpKey: false, hasInstacartKey: false, serpUsage: { n: 0, limit: 230 }
 });
 
 /* ---------------- derived helpers ---------------- */
@@ -142,6 +142,7 @@ export async function loadAll() {
   app.purchases = pu.data;
   app.members = m.data || []; app.invites = inv.data || [];
   app.hasSerpKey = !!key.data;
+  sb.rpc('has_instacart_key').then(({ data }) => (app.hasInstacartKey = !!data));
   app.serpUsage = { n: use.data?.n || 0, limit: Number(app.settings.serpMonthlyLimit) || 230 };
   app.pantry = pan.error ? [] : pan.data;
 }
@@ -189,6 +190,22 @@ export async function setHave(itemIds, have, storeId, paid) {
     const { data, error: e2 } = await sb.from('purchases').insert(rows).select();
     if (!e2 && data) app.purchases = [...data, ...app.purchases];
   }
+}
+
+/* ---------------- upcoming weeks ---------------- */
+// Weeks after this one live in the plan as { start: 'YYYY-MM-DD' (a Monday), household, days, selected }.
+export async function saveWeeks(weeks) {
+  const plan = { ...app.plan, weeks };
+  app.plan = plan;
+  const { error } = await sb.from('week_plan').upsert({ household_id: app.household, data: plan, updated_at: new Date().toISOString() });
+  if (error) fail(error);
+}
+/** Make an upcoming week the current one (same as "Start the week" on the Week tab). */
+export async function startUpcoming(start) {
+  const wk = (app.plan.weeks || []).find((w) => w.start === start);
+  if (!wk) return;
+  app.plan = { ...app.plan, weeks: (app.plan.weeks || []).filter((w) => w.start !== start), weekOf: start };
+  await savePlan({ household: wk.household, days: wk.days, selected: wk.selected || [], startNewWeek: true });
 }
 
 export async function savePlan({ household, days, selected, startNewWeek, pantry, sourceUrl }) {
@@ -368,6 +385,11 @@ export async function saveSerpKey(key) {
   const { error } = await sb.rpc('set_serp_key', { k: key.replace(/\s+/g, '') });
   if (error) fail(error);
   app.hasSerpKey = true;
+}
+export async function saveInstacartKey(key) {
+  const { error } = await sb.rpc('set_instacart_key', { k: key.trim() });
+  if (error) fail(error);
+  app.hasInstacartKey = true;
 }
 export async function testSerpKey() { return callProxy({ action: 'serp-account' }); }
 

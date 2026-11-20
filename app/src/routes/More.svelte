@@ -1,8 +1,10 @@
 <script>
   import InstallApp from '../components/InstallApp.svelte';
-  import { app, saveSettings, saveSerpKey, testSerpKey, invite, signOut, deleteAccount, saveStore, toast } from '../lib/db.svelte.js';
+  import { app, saveSettings, saveSerpKey, testSerpKey, saveInstacartKey, invite, signOut, deleteAccount, saveStore, toast } from '../lib/db.svelte.js';
   import { trip } from '../lib/trip.svelte.js';
   let { go } = $props();
+  let icKey = $state('');
+  async function icSave() { try { await saveInstacartKey(icKey); icKey = ''; toast('✓ Instacart key saved'); } catch (e) { toast(e.message); } }
   let delAsk = $state(false), delWord = $state(''), delBusy = $state(false), delErr = $state('');
   async function reallyDelete() {
     delBusy = true; delErr = '';
@@ -100,6 +102,15 @@
       {#if keyMsg}<div class={keyMsg.ok ? 'ok' : 'err'}>{keyMsg.ok ? '✓ ' : '⚠️ '}{keyMsg.text}</div>{/if}
       <p class="small muted">Your key is stored so only the app's server can read it — it never comes back to the phone.</p>
       <label class="f">Monthly search cap (free plan = 250)<input type="number" min="0" bind:value={s.serpMonthlyLimit} onchange={save} /></label>
+    </div>
+
+    <div class="card">
+      <h3>Delivery: Instacart</h3>
+      <p class="small">{app.hasInstacartKey ? '✅ Key saved. Week shopping lists have an Instacart button.' : 'Lets you send a week’s list to Instacart and pick the store there: Costco same-day, Safeway, Sprouts and more.'}</p>
+      <ol class="small" style="padding-left:18px"><li>Sign in at the <a href="https://docs.instacart.com/developer_platform_api/" target="_blank" rel="noopener">Instacart Developer Platform</a> (Get started) and sign up for access.</li><li>In the dashboard, create an API key (Production if offered; a Development key opens Instacart’s test site).</li><li>Paste it below and press <b>Save</b>.</li></ol>
+      <div class="row"><input class="grow" type="password" autocomplete="off" placeholder={app.hasInstacartKey ? 'Saved — paste a new key to replace' : 'Paste your Instacart API key'} bind:value={icKey} />
+        <button onclick={icSave} disabled={!icKey.trim()}>Save</button></div>
+      <p class="small muted">Stored like the SerpApi key: only the app's server can read it.</p>
     </div>
 
     <div class="card">

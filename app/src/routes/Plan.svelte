@@ -1,8 +1,11 @@
 <script>
   import { app, itemById, recipeById, savePlan, listBareMinimum, importBareMinimum, toast, owned } from '../lib/db.svelte.js';
   import { rankByPantry, daysLeft } from '../lib/pantry.js';
+  import Weeks from './Weeks.svelte';
   import { trip, planTrip } from '../lib/trip.svelte.js';
   let { go } = $props();
+  let view = $state(localStorage.getItem('mp-week-view') || 'this');
+  $effect(() => { localStorage.setItem('mp-week-view', view); });
 
   const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   const SLOTS = ['breakfast', 'lunch', 'dinner', 'snack'];
@@ -79,7 +82,14 @@
 </script>
 
 <div class="page">
-  <h1>Plan the week</h1>
+  <h1>{view === 'weeks' ? 'Plan ahead' : 'Plan the week'}</h1>
+  <div class="seg" style="margin:4px 0 8px">
+    <button class:on={view === 'this'} onclick={() => (view = 'this')}>This week</button>
+    <button class:on={view === 'weeks'} onclick={() => (view = 'weeks')}>Next weeks{app.plan.weeks?.length ? ` (${app.plan.weeks.length})` : ''}</button>
+  </div>
+  {#if view === 'weeks'}
+    <Weeks {go} showThisWeek={() => (view = 'this')} />
+  {:else}
   <p class="muted">Pick recipes, say who's eating when, and the shopping list and trip rebuild to match.</p>
   {#if err}<div class="err">⚠️ {err}</div>{/if}
   {#if msg}<div class="ok">{msg}</div>{/if}
@@ -179,4 +189,5 @@
     <p class="small muted"><b>Start the week</b> saves this plan and clears last week's checkmarks (history is kept).</p>
     <div class="row"><button onclick={() => save(true)} disabled={saving}>{#if saving}<span class="spinner"></span>{/if} 🛒 Start the week</button><button class="ghost" onclick={() => save(false)} disabled={saving}>Save plan</button></div>
   </div>
+  {/if}
 </div>

@@ -4,6 +4,7 @@
 //   serp-account          check the household's SerpApi key (free)
 //   serp-search {q, location}  one Google Shopping search (counts toward the monthly cap)
 //   serp-location {city, state} SerpApi's canonical location name
+//   instacart-list {title, items:[{name, quantity, unit, display}]}  an Instacart shopping-list page (pick Costco, Safeway, … there)
 //   delete-account {confirm:'DELETE'}  delete your sign-in; the household's data too if you're its last member
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
@@ -27,6 +28,36 @@ Deno.serve(async (req) => {
     if (!mem) return json({ error: 'No household yet.' }, 403);
     const hid = mem.household_id;
     const body = await req.json().catch(() => ({}));
+
+    if (body.action === 'instacart-list') {
+      const { data: sec } = await admin.from('household_secrets').select('instacart_key').eq('household_id', hid).maybeSingle();
+      const key = sec?.instacart_key || Deno.env.get('INSTACART_API_KEY');
+      if (!key) return json({ error: 'Add your Instacart key in More → Settings first.' }, 400);
+      const items = (Array.isArray(body.items) ? body.items : []).slice(0, 200).filter((x: any) => x && x.name);
+      if (!items.length) return json({ error: 'Nothing to order.' }, 400);
+      const payload = {
+        title: String(body.title || 'WFD shopping list').slice(0, 100),
+        link_type: 'shopping_list',
+        expires_in: 30,
+        line_items: items.map((x: any) => ({
+          name: String(x.name).slice(0, 100),
+          display_text: x.display ? String(x.display).slice(0, 100) : undefined,
+          line_item_measurements: x.quantity ? [{ quantity: Number(x.quantity) || 1, unit: String(x.unit || 'each') }] : undefined,
+        })),
+        landing_page_configuration: { partner_linkback_url: 'https://jscottii.github.io/wfd/' },
+      };
+      // live key first; a development key only works against Instacart's test site
+      for (const base of ['https://connect.instacart.com', 'https://connect.dev.instacart.tools']) {
+        const r = await fetch(base + '/idp/v1/products/products_link', {
+          method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(payload),
+        });
+        if (r.status === 401 || r.status === 403) continue;
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) return json({ error: j?.errors?.[0]?.message || j?.error || `Instacart said ${r.status}` }, 502);
+        return json({ url: j.products_link_url, test: base.includes('dev') });
+      }
+      return json({ error: "Instacart didn't accept that key. Check it in your Instacart developer dashboard." }, 400);
+    }
 
     if (body.action === 'delete-account') {
       if (body.confirm !== 'DELETE') return json({ error: 'Type DELETE to confirm.' }, 400);
