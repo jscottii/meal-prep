@@ -24,9 +24,11 @@ Deno.serve(async (req) => {
     const token = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
     const { data: u, error: ue } = await admin.auth.getUser(token);
     if (ue || !u?.user) return json({ error: 'Please sign in again.' }, 401);
-    const { data: mem } = await admin.from('members').select('household_id').eq('user_id', u.user.id).maybeSingle();
-    if (!mem) return json({ error: 'No household yet.' }, 403);
-    const hid = mem.household_id;
+    // the household you're looking at: your current one if you're still in it, else your first
+    const { data: mems } = await admin.from('members').select('household_id, created_at').eq('user_id', u.user.id).order('created_at');
+    if (!mems?.length) return json({ error: 'No household yet.' }, 403);
+    const { data: pref } = await admin.from('user_prefs').select('current_household').eq('user_id', u.user.id).maybeSingle();
+    const hid = mems.find((m: any) => m.household_id === pref?.current_household)?.household_id || mems[0].household_id;
     const body = await req.json().catch(() => ({}));
 
     if (body.action === 'instacart-list') {
@@ -62,13 +64,15 @@ Deno.serve(async (req) => {
     if (body.action === 'delete-account') {
       if (body.confirm !== 'DELETE') return json({ error: 'Type DELETE to confirm.' }, 400);
       await admin.from('members').delete().eq('user_id', u.user.id);
-      const { count } = await admin.from('members').select('user_id', { count: 'exact', head: true }).eq('household_id', hid);
+      // every household you were the last member of goes too (recipes, plans, prices, pantry, receipts, keys)
       let householdDeleted = false;
-      if (!count) {
-        // last one out: remove the household and everything in it (recipes, plans, prices, pantry, receipts, key)
-        const { error: he } = await admin.from('households').delete().eq('id', hid);
-        if (he) return json({ error: he.message }, 500);
-        householdDeleted = true;
+      for (const m of mems) {
+        const { count } = await admin.from('members').select('user_id', { count: 'exact', head: true }).eq('household_id', m.household_id);
+        if (!count) {
+          const { error: he } = await admin.from('households').delete().eq('id', m.household_id);
+          if (he) return json({ error: he.message }, 500);
+          householdDeleted = true;
+        }
       }
       await admin.from('invites').delete().eq('invited_by', u.user.id);
       const { error: de } = await admin.auth.admin.deleteUser(u.user.id);

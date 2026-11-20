@@ -116,3 +116,7 @@ nav.tabs button.on { color: var(--accent); }
   .prep-aside button.on { background: var(--accent-soft); color: var(--accent); font-weight: 650; }
   .prep-aside button.done { color: var(--muted); }
 }
+.hhbar { display: flex; gap: 6px; flex-wrap: wrap; justify-content: space-between; padding: calc(env(safe-area-inset-top) + 4px) 10px 0; max-width: 980px; margin: 0 auto; }
+.hhbar button { font-size: 13px; }
+.brand .hh { display: block; margin-top: 8px; background: #f1ebe2; color: var(--ink); font-size: 13px; font-weight: 600; padding: 6px 10px; border-radius: 8px; }
+@media (min-width: 900px) { .hhbar { display: none; } }

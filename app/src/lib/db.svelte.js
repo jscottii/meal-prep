@@ -18,7 +18,7 @@ export const DEFAULT_SETTINGS = {
 export const app = $state({ pantry: [],
   ready: false, session: null, user: null, household: null, error: '', toast: '',
   settings: { ...DEFAULT_SETTINGS }, stores: [], items: [], prices: {}, recipes: [], plan: { household: 3, days: [] }, purchases: [],
-  members: [], invites: [], hasSerpKey: false, hasInstacartKey: false, serpUsage: { n: 0, limit: 230 }
+  members: [], invites: [], hasSerpKey: false, hasInstacartKey: false, households: [], myInvites: [], serpUsage: { n: 0, limit: 230 }
 });
 
 /* ---------------- derived helpers ---------------- */
@@ -94,6 +94,7 @@ async function boot() {
     app.household = data.household_id;
     if (data.created) await seedHousehold();
     await loadAll();
+    loadHouseholds();
     subscribe();
   } catch (e) { app.error = String(e.message || e); }
   app.ready = true;
@@ -504,8 +505,45 @@ async function unstockToday(itemIds) {
 }
 
 /* ---------------- household ---------------- */
+/* ---------------- several households ---------------- */
+export const MAX_HOUSEHOLDS = 5;
+export async function loadHouseholds() {
+  const [h, i] = await Promise.all([sb.rpc('list_households'), sb.rpc('my_invites')]);
+  if (!h.error) app.households = h.data || [];
+  if (!i.error) app.myInvites = i.data || [];
+}
+// switching households reloads everything for the one you picked
+const reloadApp = () => { location.hash = ''; location.reload(); };
+export async function switchHousehold(id) {
+  const { error } = await sb.rpc('switch_household', { hid: id }); if (error) fail(error);
+  reloadApp();
+}
+export async function createHousehold(name) {
+  const { data, error } = await sb.rpc('create_household', { nm: name }); if (error) fail(error);
+  app.household = data.household_id;
+  await seedHousehold();
+  reloadApp();
+}
+export async function acceptInvite(id) {
+  const { error } = await sb.rpc('accept_invite', { hid: id }); if (error) fail(error);
+  reloadApp();
+}
+export async function declineInvite(id) {
+  const { error } = await sb.rpc('decline_invite', { hid: id }); if (error) fail(error);
+  app.myInvites = app.myInvites.filter((x) => x.household_id !== id);
+}
+export async function leaveHousehold(id) {
+  const { error } = await sb.rpc('leave_household', { hid: id }); if (error) fail(error);
+  reloadApp();
+}
+export async function renameHousehold(name) {
+  const { error } = await sb.from('households').update({ name: name.trim() || 'Our household' }).eq('id', app.household); if (error) fail(error);
+  app.households = app.households.map((h) => (h.id === app.household ? { ...h, name: name.trim() } : h));
+}
+export const currentHousehold = () => app.households.find((h) => h.is_current) || app.households.find((h) => h.id === app.household);
+
 export async function invite(email) {
-  const { error } = await sb.from('invites').upsert({ email: email.trim().toLowerCase(), household_id: app.household, invited_by: app.user.id });
+  const { error } = await sb.from('invites').upsert({ email: email.trim().toLowerCase(), household_id: app.household, invited_by: app.user.id }, { onConflict: 'email,household_id' });
   if (error) fail(error);
   app.invites = [...app.invites.filter((x) => x.email !== email.trim().toLowerCase()), { email: email.trim().toLowerCase() }];
 }

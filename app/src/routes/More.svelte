@@ -1,16 +1,21 @@
 <script>
   import InstallApp from '../components/InstallApp.svelte';
-  import { app, saveSettings, saveSerpKey, testSerpKey, saveInstacartKey, invite, signOut, deleteAccount, saveStore, toast } from '../lib/db.svelte.js';
+  import { app, saveSettings, saveSerpKey, testSerpKey, saveInstacartKey, MAX_HOUSEHOLDS, switchHousehold, createHousehold, acceptInvite, declineInvite, leaveHousehold, renameHousehold, currentHousehold, invite, signOut, deleteAccount, saveStore, toast } from '../lib/db.svelte.js';
   import { trip } from '../lib/trip.svelte.js';
   let { go } = $props();
   let icKey = $state('');
+  let hhName = $state(''), newHh = $state(''), hhBusy = $state(''), hhErr = $state(''), leaving = $state('');
+  $effect(() => { if (!hhName && currentHousehold()) hhName = currentHousehold().name; });
+  const atMax = () => app.households.length >= MAX_HOUSEHOLDS;
+  async function hh(label, fn) { hhBusy = label; hhErr = ''; try { await fn(); } catch (e) { hhErr = e.message; } hhBusy = ''; }
   async function icSave() { try { await saveInstacartKey(icKey); icKey = ''; toast('✓ Instacart key saved'); } catch (e) { toast(e.message); } }
   let delAsk = $state(false), delWord = $state(''), delBusy = $state(false), delErr = $state('');
   async function reallyDelete() {
     delBusy = true; delErr = '';
     try { await deleteAccount(); location.hash = ''; location.reload(); } catch (e) { delErr = e.message; delBusy = false; }
   }
-  let tab = $state('history');
+  let tab = $state(sessionStorage.getItem('mp-more-tab') || 'history');
+  sessionStorage.removeItem('mp-more-tab');
   let s = $state({ ...app.settings }), saving = $state(false);
   let key = $state(''), keyBusy = $state(false), keyMsg = $state(null);
   let wife = $state(''), invBusy = $state(false);
@@ -116,10 +121,50 @@
     <div class="card">
       <h3>Household</h3>
       <p class="small">Signed in as <b>{app.user?.email}</b>.</p>
+      <label class="f">Household name
+        <div class="row"><input class="grow" bind:value={hhName} /><button class="ghost" disabled={!hhName.trim() || hhName === currentHousehold()?.name} onclick={() => hh('rename', async () => { await renameHousehold(hhName); toast('✓ Renamed'); })}>Rename</button></div>
+      </label>
       {#if app.members.length > 1}<p class="small muted">Members: {app.members.map((m) => m.email).join(', ')}</p>{/if}
-      {#if app.invites.length}<p class="small muted">Invited: {app.invites.map((i) => i.email).join(', ')} (they join when they first sign in)</p>{/if}
-      <div class="row"><input class="grow" type="email" placeholder="Your wife's email" bind:value={wife} /><button onclick={sendInvite} disabled={invBusy || !/@/.test(wife)}>Invite</button></div>
-      <p class="small muted">Then send her the app link. She signs in with that email and sees the same list, live.</p>
+      {#if app.invites.length}<p class="small muted">Invited: {app.invites.map((i) => i.email).join(', ')} (they join when they sign in)</p>{/if}
+      <div class="row"><input class="grow" type="email" placeholder="Invite someone by email" bind:value={wife} /><button onclick={sendInvite} disabled={invBusy || !/@/.test(wife)}>Invite</button></div>
+      <p class="small muted">Then send them the app link. They sign in with that email and see the same plans and lists, live. Someone already using WFD sees the invite under Your households.</p>
+    </div>
+
+    <div class="card">
+      <h3>Your households <span class="small muted" style="font-weight:400">({app.households.length} of {MAX_HOUSEHOLDS})</span></h3>
+      {#each app.households as h (h.id)}
+        <div class="list-row">
+          <div class="grow"><b>{h.name}</b> {#if h.is_current}<span class="pill live">current</span>{/if}<div class="small muted">{h.members} member{h.members === 1 ? '' : 's'}</div></div>
+          {#if !h.is_current}<button class="ghost" disabled={!!hhBusy} onclick={() => hh('sw' + h.id, () => switchHousehold(h.id))}>{#if hhBusy === 'sw' + h.id}<span class="spinner"></span>{/if} Switch</button>{/if}
+          {#if app.households.length > 1}
+            {#if leaving === h.id}
+              <button class="danger" disabled={!!hhBusy} onclick={() => hh('lv' + h.id, () => leaveHousehold(h.id))}>Leave{h.members === 1 ? ' & delete' : ''}</button>
+              <button class="quiet" onclick={() => (leaving = '')}>Cancel</button>
+            {:else}
+              <button class="quiet" onclick={() => (leaving = h.id)}>Leave</button>
+            {/if}
+          {/if}
+        </div>
+        {#if leaving === h.id && h.members === 1}<p class="small" style="color:var(--red);margin:0 0 6px">You're the only member, so leaving deletes this household's recipes, plans, prices and pantry.</p>{/if}
+      {/each}
+
+      {#if app.myInvites.length}
+        <h3 style="margin-top:14px">Invites for you</h3>
+        {#each app.myInvites as iv (iv.household_id)}
+          <div class="list-row">
+            <div class="grow"><b>{iv.name}</b>{#if iv.invited_by}<div class="small muted">from {iv.invited_by}</div>{/if}</div>
+            <button disabled={atMax() || !!hhBusy} onclick={() => hh('ac' + iv.household_id, () => acceptInvite(iv.household_id))}>{#if hhBusy === 'ac' + iv.household_id}<span class="spinner"></span>{/if} Join</button>
+            <button class="quiet" onclick={() => hh('dc', () => declineInvite(iv.household_id))}>Decline</button>
+          </div>
+        {/each}
+        {#if atMax()}<p class="small muted">You're in {MAX_HOUSEHOLDS} households, the most allowed. Leave one to join another.</p>{/if}
+      {/if}
+
+      <h3 style="margin-top:14px">Start another household</h3>
+      <div class="row"><input class="grow" placeholder="e.g. Mom & Dad, Youth group dinners" bind:value={newHh} disabled={atMax()} />
+        <button disabled={atMax() || !newHh.trim() || !!hhBusy} onclick={() => hh('new', () => createHousehold(newHh))}>{#if hhBusy === 'new'}<span class="spinner"></span>{/if} Create</button></div>
+      <p class="small muted">{atMax() ? `You're in ${MAX_HOUSEHOLDS} households, the most allowed.` : 'Each household has its own recipes, plans, pantry, stores and prices. Switching changes what the whole app shows.'}</p>
+      {#if hhErr}<div class="err">⚠️ {hhErr}</div>{/if}
       <button class="ghost" style="margin-top:10px" onclick={signOut}>Sign out</button>
     </div>
     <div class="card">

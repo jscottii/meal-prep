@@ -1,5 +1,5 @@
 <script>
-  import { app, start } from './lib/db.svelte.js';
+  import { app, start, currentHousehold } from './lib/db.svelte.js';
   import Login from './routes/Login.svelte';
   import Trip from './routes/Trip.svelte';
   import Plan from './routes/Plan.svelte';
@@ -26,6 +26,12 @@
   <div class="page"><div class="err">⚠️ {app.error}</div><button onclick={() => location.reload()}>Try again</button></div>
 {:else}
   <TimerDock />
+  {#if app.households.length > 1 || app.myInvites.length}
+    <div class="hhbar">
+      {#if app.households.length > 1}<button class="quiet" onclick={() => { sessionStorage.setItem('mp-more-tab', 'settings'); go('more'); }}>🏠 {currentHousehold()?.name}</button>{/if}
+      {#if app.myInvites.length}<button class="quiet" onclick={() => { sessionStorage.setItem('mp-more-tab', 'settings'); go('more'); }}>✉️ {app.myInvites.length === 1 ? `${app.myInvites[0].name} invited you` : `${app.myInvites.length} household invites`} →</button>{/if}
+    </div>
+  {/if}
   {#key page}
     {#if page === 'plan'}<Plan {go} />
     {:else if page === 'prep'}<Prep {go} />
@@ -37,7 +43,7 @@
     {:else}<Trip {go} />{/if}
   {/key}
   <nav class="tabs">
-    <div class="brand"><img src="icon.svg" alt="" width="26" height="26" style="vertical-align:-7px;margin-right:8px;border-radius:6px" />What's for Dinner</div>
+    <div class="brand"><img src="icon.svg" alt="" width="26" height="26" style="vertical-align:-7px;margin-right:8px;border-radius:6px" />What's for Dinner{#if app.households.length > 1}<button class="hh" onclick={() => { sessionStorage.setItem('mp-more-tab', 'settings'); go('more'); }}>🏠 {currentHousehold()?.name} ▾</button>{/if}</div>
     {#each TABS as [k, ic, label]}<button class:on={page === k} onclick={() => go(k)}><span class="ic">{ic}</span>{label}</button>{/each}
   </nav>
 {/if}
