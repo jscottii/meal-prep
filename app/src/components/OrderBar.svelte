@@ -22,16 +22,12 @@
 
 {#if lines.length}
   <div class="row" style="gap:6px;margin-top:8px">
-    {#if app.hasInstacartKey}
-      <button onclick={() => order('instacart')} disabled={!!busy}>{#if busy === 'instacart'}<span class="spinner"></span>{/if} {ic ? `${ic} (Instacart)` : 'Instacart'}</button>
-    {:else if go}
-      <button class="ghost" onclick={() => { sessionStorage.setItem('mp-more-tab', 'settings'); go('more'); }} title="Costco same-day, Safeway, Sprouts and more">Instacart: set up</button>
-    {/if}
+    <button onclick={() => order('instacart')} disabled={!!busy}>{#if busy === 'instacart'}<span class="spinner"></span>{/if} {ic ? `${ic} (Instacart)` : 'Instacart · Costco same-day'}</button>
     <button class="ghost" onclick={() => order('walmart')} disabled={!!busy}>{#if busy === 'walmart'}<span class="spinner"></span>{/if} Walmart</button>
     <button class="ghost" onclick={() => order('amazon')}>Amazon Fresh / Whole Foods</button>
     <button class="quiet" onclick={() => order('share')}>Share list</button>
   </div>
   {#if err}<div class="err small">⚠️ {err}</div>{/if}
   {#if note}<div class="ok small">{note}</div>{/if}
-  <p class="small muted" style="margin:4px 0 0">These fill the store’s cart; you sign in on their site and check out. {app.hasSerpKey ? 'Walmart uses one price-check search per item.' : 'Walmart copies the list unless you add a SerpApi key.'} Pick your Instacart store (Costco same-day, Safeway…) in Settings.</p>
+  <p class="small muted" style="margin:4px 0 0">These fill the store’s cart; you sign in on their site and check out. Pick your usual Instacart store (Costco, Safeway…) in Settings.</p>
 {/if}

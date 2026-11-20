@@ -1,9 +1,12 @@
 <script>
   import InstallApp from '../components/InstallApp.svelte';
-  import { app, saveSettings, saveSerpKey, testSerpKey, saveInstacartKey, MAX_HOUSEHOLDS, switchHousehold, createHousehold, acceptInvite, declineInvite, leaveHousehold, renameHousehold, currentHousehold, getJoinCode, resetJoinCode, peekCode, joinWithCode, showCode, inviteLink, invite, signOut, deleteAccount, saveStore, addLocalStores, toast } from '../lib/db.svelte.js';
+  import { app, saveSettings, saveSerpKey, testSerpKey, saveInstacartKey, MAX_HOUSEHOLDS, switchHousehold, createHousehold, acceptInvite, declineInvite, leaveHousehold, renameHousehold, currentHousehold, getJoinCode, resetJoinCode, peekCode, joinWithCode, showCode, inviteLink, invite, signOut, deleteAccount, saveStore, addLocalStores, setHouseholdSize, toast } from '../lib/db.svelte.js';
   import { findLocalChains } from '../lib/maps.js';
   import { ui } from '../lib/ui.svelte.js';
   import { instacartStores } from '../lib/order.js';
+  import { STRIPE_PAYMENT_LINK, STRIPE_PORTAL_LINK, PLUS_PRICE } from '../lib/config.js';
+  import { isNative } from '../lib/native.js';
+  const plusLink = () => `${STRIPE_PAYMENT_LINK}?client_reference_id=${app.user?.id}&prefilled_email=${encodeURIComponent(app.user?.email || '')}`;
   let icZip = $state((String(app.settings.homeAddress || '').match(/\b\d{5}\b/) || [''])[0]), icStores = $state(null), icBusy = $state(false), icErr = $state('');
   async function icFind() { icBusy = true; icErr = ''; try { icStores = await instacartStores(icZip); if (!icStores.length) icErr = 'No Instacart stores found for that ZIP.'; } catch (e) { icErr = e.message; } icBusy = false; }
   import { trip } from '../lib/trip.svelte.js';
@@ -57,7 +60,8 @@
     saving = true;
     try { await saveSettings({ homeAddress: s.homeAddress, mpg: +s.mpg, gasPrice: +s.gasPrice, timeValue: +s.timeValue, timeValueSet: !!s.timeValueSet, stopMinutes: +s.stopMinutes, maxStores: +s.maxStores,
       costcoMember: !!s.costcoMember, costcoMode: s.costcoMode, householdSize: +s.householdSize, audience: s.audience || 'household', units: s.units || 'imperial', nearestStores: !!s.nearestStores, serpMonthlyLimit: +s.serpMonthlyLimit });
-      trip.result = null; toast('✓ Settings saved');
+      await setHouseholdSize(+s.householdSize);
+      trip.result = null; toast('✓ Settings saved — plan, recipe amounts and shopping list updated');
       if (moved) { tab = 'stores'; findLocal(); } }
     catch (e) { toast(e.message); }
     saving = false;
@@ -133,7 +137,7 @@
     <InstallApp />
     <div class="card">
       <label class="f">Who you cook for<select bind:value={s.audience} onchange={() => { saveSettings({ audience: s.audience }); toast(s.audience === "group" ? "✓ Big-group mode: more detail everywhere" : "✓ Household mode: simpler screens"); }}><option value="household">My household — keep it simple</option><option value="group">A big group (10+) — show me the details</option></select></label>
-      <label class="f">Show pantry amounts in<select bind:value={s.units}><option value="imperial">Imperial — lb, oz, cups</option><option value="metric">Metric — kg, g, L</option><option value="relative">Just how much is left — plenty, some, low, out</option></select></label>
+      <label class="f">Show pantry amounts in<select bind:value={s.units}><option value="imperial">Imperial — lb, oz, cups</option><option value="metric">Metric — kg, g, L</option></select></label>
       <label class="f">Home address (trips end here)<input bind:value={s.homeAddress} /></label>
       <div class="grid2">
         <label class="f">Usually feeding (people)<input type="number" min="1" bind:value={s.householdSize} /></label>
@@ -154,22 +158,25 @@
     </div>
 
     <div class="card">
-      <h3>Live prices (SerpApi)</h3>
-      <p class="small">{app.hasSerpKey ? `✅ Key saved · ${app.serpUsage.n} of ${app.serpUsage.limit} searches used this month` : 'No key yet.'}</p>
-      <ol class="small" style="padding-left:18px"><li>Sign up free at <a href="https://serpapi.com/users/sign_up" target="_blank" rel="noopener">serpapi.com</a> and confirm your email.</li><li>Copy your key from <a href="https://serpapi.com/manage-api-key" target="_blank" rel="noopener">Your API Key</a> (64 characters).</li><li>Paste it below and press <b>Save & test</b>.</li></ol>
-      <div class="row"><input class="grow" type="password" autocomplete="off" placeholder={app.hasSerpKey ? 'Saved — paste a new key to replace' : 'Paste your SerpApi key'} bind:value={key} />
-        <button onclick={keyTest} disabled={keyBusy || (!key.trim() && !app.hasSerpKey)}>{#if keyBusy}<span class="spinner"></span>{/if} {key.trim() ? 'Save & test' : 'Test'}</button></div>
-      {#if keyMsg}<div class={keyMsg.ok ? 'ok' : 'err'}>{keyMsg.ok ? '✓ ' : '⚠️ '}{keyMsg.text}</div>{/if}
-      <p class="small muted">Your key is stored so only the app's server can read it — it never comes back to the phone.</p>
-      <label class="f">Monthly search cap (free plan = 250)<input type="number" min="0" bind:value={s.serpMonthlyLimit} onchange={save} /></label>
+      <h3>⭐ WFD Plus</h3>
+      {#if app.plus}
+        <p class="small">✅ You're a Plus member — no ads. Thank you!</p>
+        {#if STRIPE_PORTAL_LINK}<a class="btn ghost" href={STRIPE_PORTAL_LINK} target="_blank" rel="noopener">Manage subscription ↗</a>{/if}
+      {:else}
+        <p class="small">No ads, ever, and you support the app. {PLUS_PRICE}, cancel any time.</p>
+        {#if STRIPE_PAYMENT_LINK && !isNative()}<a class="btn" href={plusLink()} target="_blank" rel="noopener">Go ad-free</a>
+        {:else}<p class="small muted">Coming soon.</p>{/if}
+      {/if}
     </div>
 
     <div class="card">
-      <h3>Delivery: Instacart</h3>
-      <p class="small">{app.hasInstacartKey ? '✅ Key saved. Week shopping lists have an Instacart button.' : 'Lets you send a week’s list to Instacart and pick the store there: Costco same-day, Safeway, Sprouts and more.'}</p>
-      <ol class="small" style="padding-left:18px"><li>Sign in at the <a href="https://docs.instacart.com/developer_platform_api/" target="_blank" rel="noopener">Instacart Developer Platform</a> (Get started) and sign up for access.</li><li>In the dashboard, create an API key (Production if offered; a Development key opens Instacart’s test site).</li><li>Paste it below and press <b>Save</b>.</li></ol>
-      <div class="row"><input class="grow" type="password" autocomplete="off" placeholder={app.hasInstacartKey ? 'Saved — paste a new key to replace' : 'Paste your Instacart API key'} bind:value={icKey} />
-        <button onclick={icSave} disabled={!icKey.trim()}>Save</button></div>
+      <h3>Delivery: Instacart & Costco same-day</h3>
+      <p class="small">Tap <b>Instacart</b> on any shopping list and your items go straight into an Instacart cart. You sign in with your own Instacart account to check out — Costco same-day, Safeway, Sprouts and more are all there, and your Costco membership is linked inside Instacart.</p>
+      <div class="row">
+        <a class="btn ghost" href="https://www.instacart.com/login" target="_blank" rel="noopener">Sign in to Instacart ↗</a>
+        <a class="btn ghost" href="https://sameday.costco.com/" target="_blank" rel="noopener">Costco same-day ↗</a>
+      </div>
+      <p class="small muted" style="margin:6px 0 0">Signing in once on this device keeps you signed in when the app sends a list.</p>
       {#if app.hasInstacartKey}
         <p class="small" style="margin:10px 0 4px"><b>Your usual Instacart store</b> {app.settings.instacartStore ? `· ${app.settings.instacartStore.name}` : '· none (you pick each time)'}</p>
         <div class="row"><input style="width:7em" inputmode="numeric" placeholder="ZIP" bind:value={icZip} /><button class="ghost" onclick={icFind} disabled={icBusy || !icZip.trim()}>{#if icBusy}<span class="spinner"></span>{/if} Find stores</button>
@@ -177,7 +184,7 @@
         {#if icErr}<div class="err small">⚠️ {icErr}</div>{/if}
         {#if icStores}<div class="row" style="gap:4px;margin-top:6px">{#each icStores.slice(0, 30) as st}<button class="chip" class:on={app.settings.instacartStore?.key === st.key} onclick={() => { saveSettings({ instacartStore: { key: st.key, name: st.name } }); toast(`✓ Instacart will open at ${st.name}`); }}>{st.name}</button>{/each}</div>{/if}
       {/if}
-      <p class="small muted">Stored like the SerpApi key: only the app's server can read it.</p>
+      {#if !app.hasInstacartKey}<p class="small muted">Instacart ordering is being switched on for the app — the button will work once it is.</p>{/if}
     </div>
 
     <div class="card">

@@ -9,6 +9,7 @@
   import { scaleLine, scaleStepHtml, prepLists, cookMinutes, alignSteps, isPrepStep, durationOf, equipmentFor, stepMinutes, fmtMins } from '../lib/cookday.js';
   import { unlockAudio, holdAwake } from '../lib/timers.js';
   import { tap } from '../lib/native.js';
+  import Tonight from '../components/Tonight.svelte';
   let { go } = $props();
 
   const SLOTS = ['breakfast', 'lunch', 'dinner', 'snack'];
@@ -240,14 +241,14 @@
 {/snippet}
 
 <div class="page wide" style="padding-bottom:calc(var(--nav) + 90px)">
-  <h1>Cook day</h1>
+  <h1>{!big && mode === 'simple' ? "What's for dinner" : 'Cook day'}</h1>
   {#if !recipes.length}
     <p class="muted">No recipes picked for this week yet.</p>
     <button onclick={() => go('plan')}>Plan the week</button>
   {:else}
     <div class="row" style="justify-content:space-between;margin-bottom:8px">
       <div class="seg">
-        {#if !big}<button class:on={mode === 'simple'} onclick={() => (mode = 'simple')}>Recipes</button>{/if}
+        {#if !big}<button class:on={mode === 'simple'} onclick={() => (mode = 'simple')}>Tonight</button>{/if}
         <button class:on={mode === 'steps'} onclick={resume}>Step by step</button>
         {#if big}<button class:on={mode === 'overview'} onclick={() => (mode = 'overview')}>Overview</button>{/if}
       </div>
@@ -273,8 +274,10 @@
     {/if}
     {#if err}<div class="err">⚠️ {err}</div>{/if}
     {#if mode === 'simple'}
-      <p class="small muted" style="margin:0 0 8px">Your recipes for this week, with amounts sized to your plan. Batch cooking? Try <button class="quiet" onclick={resume}>Step by step</button> — it walks you through cooking everything at once.</p>
-      {#each recipes as r}{@render recipeBlock(r)}{/each}
+      <Tonight onsteps={resume} />
+      <details><summary class="small" style="margin:8px 0">All of this week's recipes ({recipes.length})</summary>
+        {#each recipes as r}{@render recipeBlock(r)}{/each}
+      </details>
     {:else}
     {#each missingGuides as g}
       <div class="note small">The cook-day plan for <b>{g.mine.map((r) => r.title).join(', ')}</b> isn't saved yet, so those recipes are listed one at a time.

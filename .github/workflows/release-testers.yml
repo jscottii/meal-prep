@@ -1,0 +1,98 @@
+# Release to testers: uploads the iPhone app to TestFlight and the Android app to Google Play internal testing.
+# Run it from GitHub → Actions → "Release to testers" → Run workflow. Needs the secrets listed in STORE_SETUP.md;
+# a platform whose secrets aren't set yet is skipped.
+name: Release to testers
+on:
+  workflow_dispatch:
+    inputs:
+      version: { description: 'Version people see (e.g. 1.0.0)', required: true, default: '1.0.0' }
+      notes: { description: 'What changed (shown to testers)', required: false, default: 'New test build' }
+jobs:
+  ios:
+    runs-on: macos-15
+    defaults: { run: { working-directory: app } }
+    env: { HAS_SECRETS: "${{ secrets.ASC_KEY_ID != '' && secrets.APPLE_TEAM_ID != '' }}" }
+    steps:
+      - uses: actions/checkout@v4
+        if: env.HAS_SECRETS == 'true'
+      - uses: actions/setup-node@v4
+        if: env.HAS_SECRETS == 'true'
+        with: { node-version: 22, cache: npm, cache-dependency-path: app/package-lock.json }
+      - name: Build web app
+        if: env.HAS_SECRETS == 'true'
+        run: npm ci && npm run build:native && npx cap sync ios
+      - name: App Store Connect key
+        if: env.HAS_SECRETS == 'true'
+        run: |
+          mkdir -p ~/private_keys
+          echo "${{ secrets.ASC_KEY_P8_BASE64 }}" | base64 --decode > ~/private_keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8
+      - name: Archive (Apple manages signing)
+        if: env.HAS_SECRETS == 'true'
+        run: |
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release -destination 'generic/platform=iOS' \
+            -archivePath $RUNNER_TEMP/WFD.xcarchive -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8 \
+            -authenticationKeyID ${{ secrets.ASC_KEY_ID }} -authenticationKeyIssuerID ${{ secrets.ASC_ISSUER_ID }} \
+            DEVELOPMENT_TEAM=${{ secrets.APPLE_TEAM_ID }} CODE_SIGN_STYLE=Automatic \
+            MARKETING_VERSION=${{ inputs.version }} CURRENT_PROJECT_VERSION=${{ github.run_number }} archive | tail -30
+      - name: Upload to TestFlight
+        if: env.HAS_SECRETS == 'true'
+        run: |
+          cat > $RUNNER_TEMP/export.plist <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>${{ secrets.APPLE_TEAM_ID }}</string>
+            <key>signingStyle</key><string>automatic</string>
+          </dict></plist>
+          PLIST
+          xcodebuild -exportArchive -archivePath $RUNNER_TEMP/WFD.xcarchive -exportOptionsPlist $RUNNER_TEMP/export.plist \
+            -exportPath $RUNNER_TEMP/out -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8 \
+            -authenticationKeyID ${{ secrets.ASC_KEY_ID }} -authenticationKeyIssuerID ${{ secrets.ASC_ISSUER_ID }} | tail -30
+      - name: Skipped
+        if: env.HAS_SECRETS != 'true'
+        run: echo "iOS skipped — add the Apple secrets from STORE_SETUP.md"
+
+  android:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: app } }
+    env:
+      HAS_SECRETS: "${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}"
+      HAS_PLAY: "${{ secrets.PLAY_SERVICE_ACCOUNT_JSON != '' }}"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: app/package-lock.json }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21 }
+      - name: Build web app
+        if: env.HAS_SECRETS == 'true'
+        run: npm ci && npm run build:native && npx cap sync android
+      - name: Signed app bundle
+        if: env.HAS_SECRETS == 'true'
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > $RUNNER_TEMP/upload.jks
+          export ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/upload.jks
+          cd android && ./gradlew bundleRelease --no-daemon -PversionCode=${{ github.run_number }} -PversionName=${{ inputs.version }}
+      - uses: actions/upload-artifact@v4
+        if: env.HAS_SECRETS == 'true'
+        with: { name: wfd-android-release, path: app/android/app/build/outputs/bundle/release/app-release.aab }
+      - name: Upload to Play internal testing
+        if: env.HAS_SECRETS == 'true' && env.HAS_PLAY == 'true'
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.jscottii.wfd
+          releaseFiles: app/android/app/build/outputs/bundle/release/app-release.aab
+          track: internal
+          status: completed
+      - name: Skipped
+        if: env.HAS_SECRETS != 'true'
+        run: echo "Android skipped — add the Android secrets from STORE_SETUP.md"

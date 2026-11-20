@@ -33,10 +33,17 @@ Deno.serve(async (req) => {
     const hid = mems.find((m: any) => m.household_id === pref?.current_household)?.household_id || mems[0].household_id;
     const body = await req.json().catch(() => ({}));
 
+    if (body.action === 'capabilities') {
+      // which shared services the app can use (never returns the keys themselves)
+      const { data: sec } = await admin.from('household_secrets').select('serpapi_key, instacart_key').eq('household_id', hid).maybeSingle();
+      return json({ instacart: !!(sec?.instacart_key || Deno.env.get('INSTACART_API_KEY')), serp: !!(sec?.serpapi_key || Deno.env.get('SERPAPI_KEY')),
+        stripe: !!Deno.env.get('STRIPE_SECRET_KEY') });
+    }
+
     if (body.action === 'instacart-list') {
       const { data: sec } = await admin.from('household_secrets').select('instacart_key').eq('household_id', hid).maybeSingle();
       const key = sec?.instacart_key || Deno.env.get('INSTACART_API_KEY');
-      if (!key) return json({ error: 'Add your Instacart key in More → Settings first.' }, 400);
+      if (!key) return json({ error: 'Instacart ordering isn’t switched on for this app yet.' }, 400);
       const items = (Array.isArray(body.items) ? body.items : []).slice(0, 200).filter((x: any) => x && x.name);
       if (!items.length) return json({ error: 'Nothing to order.' }, 400);
       const payload = {
@@ -159,8 +166,8 @@ Deno.serve(async (req) => {
         return json({ location: hit ? String(hit.canonical_name).replace(/,/g, ', ') : `${body.state || 'California'}, United States` });
       }
       const { data: sec } = await admin.from('household_secrets').select('serpapi_key').eq('household_id', hid).maybeSingle();
-      const key = (sec?.serpapi_key || '').trim();
-      if (!key) return json({ error: 'No SerpApi key saved yet. Add it in Settings.' }, 400);
+      const key = (sec?.serpapi_key || Deno.env.get('SERPAPI_KEY') || '').trim();
+      if (!key) return json({ error: 'Live price checks aren’t switched on for this app yet.' }, 400);
 
       if (body.action === 'serp-account') {
         const r = await fetch(`https://serpapi.com/account.json?api_key=${encodeURIComponent(key)}`);
@@ -217,7 +224,7 @@ Deno.serve(async (req) => {
       // stores near a ZIP code on Instacart, so the list can open straight at Costco, Safeway, …
       const { data: sec } = await admin.from('household_secrets').select('instacart_key').eq('household_id', hid).maybeSingle();
       const key = sec?.instacart_key || Deno.env.get('INSTACART_API_KEY');
-      if (!key) return json({ error: 'Add your Instacart key first.' }, 400);
+      if (!key) return json({ error: 'Instacart ordering isn’t switched on for this app yet.' }, 400);
       const zip = String(body.postal_code || '').replace(/[^0-9A-Za-z ]/g, '').slice(0, 10);
       for (const base of ['https://connect.instacart.com', 'https://connect.dev.instacart.tools']) {
         const r = await fetch(`${base}/idp/v1/retailers?postal_code=${encodeURIComponent(zip)}&country_code=${body.country || 'US'}`, { headers: { Authorization: 'Bearer ' + key, Accept: 'application/json' } });

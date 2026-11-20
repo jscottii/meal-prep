@@ -29,3 +29,20 @@ export function showAmount(str, mode = 'imperial') {
   if (mode === 'metric') return (a.ml >= 1000 ? `${r1(a.ml / 1000)} L` : `${Math.round(a.ml / 5) * 5 || r1(a.ml)} ml`) + tail;
   const c = a.ml / 236.588; return (a.ml >= 3785 ? `${r1(a.ml / 3785.41)} gal` : a.ml >= 946 ? `${r1(a.ml / 946.353)} qt` : c >= 0.25 ? `${r1(c)} cups` : `${r1(a.ml / 29.5735)} fl oz`) + tail;
 }
+
+export const UNIT_CHOICES = {
+  imperial: ['each', 'lb', 'oz', 'gal', 'qt', 'cups', 'fl oz', 'dozen', 'pack', 'bag', 'box', 'can', 'jar', 'bottle', 'bunch', 'loaf'],
+  metric: ['each', 'kg', 'g', 'L', 'ml', 'dozen', 'pack', 'bag', 'box', 'can', 'jar', 'bottle', 'bunch', 'loaf'],
+};
+/** "1.5 lb" → { n: 1.5, unit: 'lb' } in the household's system (converted if needed). */
+export function splitAmount(str, mode = 'imperial') {
+  const shown = showAmount(str, mode);
+  const m = String(shown || '').trim().match(/^(\d+(?:\.\d+)?)?\s*([½¼¾⅓⅔⅛])?\s*(fl oz|[a-zA-Z]+)?/);
+  const FR = { '½': 0.5, '¼': 0.25, '¾': 0.75, '⅓': 0.33, '⅔': 0.67, '⅛': 0.125 };
+  const n = m && (m[1] || m[2]) ? Math.round(((Number(m[1]) || 0) + (FR[m[2]] || 0)) * 100) / 100 : null;
+  let unit = (m?.[3] || 'each').toLowerCase();
+  const alias = { lbs: 'lb', pound: 'lb', pounds: 'lb', ounce: 'oz', ounces: 'oz', cup: 'cups', l: 'L', liter: 'L', liters: 'L', gallon: 'gal', gallons: 'gal', quart: 'qt', quarts: 'qt', packs: 'pack', bags: 'bag', boxes: 'box', cans: 'can', jars: 'jar', bottles: 'bottle', bunches: 'bunch', loaves: 'loaf', eggs: 'each', large: 'each', small: 'each', medium: 'each', head: 'each', heads: 'each' };
+  unit = alias[unit] || unit;
+  if (!UNIT_CHOICES[mode].includes(unit)) unit = 'each';
+  return { n, unit };
+}

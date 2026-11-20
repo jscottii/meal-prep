@@ -18,7 +18,7 @@ export const DEFAULT_SETTINGS = {
 export const app = $state({ pantry: [],
   ready: false, session: null, user: null, household: null, error: '', toast: '',
   settings: { ...DEFAULT_SETTINGS }, stores: [], items: [], prices: {}, recipes: [], plan: { household: 3, days: [] }, purchases: [],
-  members: [], invites: [], hasSerpKey: false, hasInstacartKey: false, households: [], myInvites: [], pendingJoin: null, weeks: [], carts: [], serpUsage: { n: 0, limit: 230 }
+  members: [], invites: [], hasSerpKey: false, hasInstacartKey: false, households: [], myInvites: [], pendingJoin: null, weeks: [], carts: [], serpUsage: { n: 0, limit: 230 }, plus: false, canPay: false
 });
 
 /* ---------------- derived helpers ---------------- */
@@ -76,6 +76,34 @@ export async function deleteAccount() {
 }
 export async function signOut() { await sb.auth.signOut(); location.reload(); }
 
+/** A new "usually feeding" number flows through: this week's plan, upcoming weeks, and so recipe scaling and the shopping list. */
+export async function setHouseholdSize(n) {
+  n = Math.max(1, Number(n) || 1);
+  const old = Number(app.plan.household) || Number(app.settings.householdSize) || 3;
+  if (old !== n) {
+    const { weeks: _old, ...rest } = app.plan;
+    const plan = { ...rest, household: n, days: (app.plan.days || []).map((d) => ({ ...d, people: Number(d.people) === old ? n : d.people })) };
+    const { error } = await sb.from('week_plan').upsert({ household_id: app.household, data: plan, updated_at: new Date().toISOString() });
+    if (error) fail(error);
+    app.plan = plan;
+    for (const w of app.weeks) {
+      const wo = Number(w.household) || old;
+      if (wo === n) continue;
+      await saveWeek({ ...w, household: n, days: (w.days || []).map((d) => ({ ...d, people: Number(d.people) === wo ? n : d.people })) });
+    }
+  }
+}
+/** Clear this week's plan (saved recipes stay). */
+export async function deletePlan() {
+  const { weeks: _old, ...rest } = app.plan;
+  const plan = { ...rest, days: [], prepDone: {}, timers: {} };
+  const { error } = await sb.from('week_plan').upsert({ household_id: app.household, data: plan, updated_at: new Date().toISOString() });
+  if (error) fail(error);
+  app.plan = plan;
+  const on = app.recipes.filter((r) => r.active).map((r) => r.id);
+  if (on.length) await sb.from('recipes').update({ active: false }).in('id', on);
+  app.recipes.forEach((r) => (r.active = false));
+}
 export async function start() {
   const { data } = await sb.auth.getSession();
   app.session = data.session; app.user = data.session?.user || null;
@@ -153,6 +181,8 @@ export async function loadAll() {
   app.members = m.data || []; app.invites = inv.data || [];
   app.hasSerpKey = !!key.data;
   sb.rpc('has_instacart_key').then(({ data }) => (app.hasInstacartKey = !!data));
+  sb.from('entitlements').select('plus').eq('user_id', app.user?.id).maybeSingle().then(({ data }) => (app.plus = !!data?.plus));
+  callProxy({ action: 'capabilities' }).then((c) => { app.hasInstacartKey = !!c.instacart; app.hasSerpKey = !!c.serp; app.canPay = !!c.stripe; }).catch(() => {});
   app.serpUsage = { n: use.data?.n || 0, limit: Number(app.settings.serpMonthlyLimit) || 230 };
   app.pantry = pan.error ? [] : pan.data;
   // trips now rank mainly on grocery cost: move the old $25/hr default for your time down to $5/hr

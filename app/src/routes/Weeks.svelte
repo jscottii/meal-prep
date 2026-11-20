@@ -154,7 +154,7 @@
       </div>
 
       {#if finding === w.start}
-        <div style="margin-top:8px"><FindRecipes onclose={() => (finding = '')} onbm={showThisWeek} onadd={(r) => { if (!w.selected.includes(r.id)) { w.selected.push(r.id); spread(w); } }} /></div>
+        <div style="margin-top:8px"><FindRecipes onclose={() => (finding = '')} onadd={(r) => { if (!w.selected.includes(r.id)) { w.selected.push(r.id); spread(w); } }} /></div>
       {/if}
 
       {#if w.selected.length}
@@ -188,7 +188,7 @@
     <button onclick={addWeek} disabled={weeks.length >= 6}>+ Add week of {nice(addDays(weeks.at(-1)?.start || thisWeek, 7))}</button>
     <button class="quiet" onclick={() => (finding = finding === 'top' ? '' : 'top')}>🔎 Find more recipes</button>
   </div>
-  {#if finding === 'top'}<FindRecipes onclose={() => (finding = '')} onbm={showThisWeek} />{/if}
+  {#if finding === 'top'}<FindRecipes onclose={() => (finding = '')} />{/if}
   {/if}
   <p class="small muted">Plan up to six weeks ahead. Each week keeps its own shopping list; when a week arrives, tap <b>Start this week</b> and it becomes your trip and cook day.</p>
 </div>

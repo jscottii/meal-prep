@@ -29,7 +29,7 @@
       <button style="margin-top:8px" onclick={check} disabled={busy}>{#if busy}<span class="spinner"></span> {prog || 'Checking…'}{:else}Check this week's prices{/if}</button>
       <p class="small muted">One search per item covers Safeway, Lucky, Raley's and Target together. Items checked in the last 2 days are skipped. Trader Joe's, Grocery Outlet and Costco prices come from your receipts.</p>
     {:else}
-      <p class="small">Live prices need a free SerpApi key. <a href="#more" onclick={(e) => { e.preventDefault(); go('more'); }}>Add it in Settings</a>. Until then, prices are estimates, your own entries, and your receipts.</p>
+      <p class="small">Live price checks aren’t switched on yet. Prices are estimates, your own entries, and your receipts.</p>
     {/if}
     {#if err}<div class="err">⚠️ {err}</div>{/if}
     {#if result}<div class="ok">✓ {result.live} prices updated from {result.searched} searches{result.recent ? ` · ${result.recent} checked recently, skipped` : ''}{result.budget ? ' · monthly limit reached' : ''}. Searched near {result.location}.</div>{/if}

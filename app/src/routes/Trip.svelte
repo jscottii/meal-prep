@@ -1,4 +1,5 @@
 <script>
+  import AdSlot from '../components/AdSlot.svelte';
   import InstallApp from '../components/InstallApp.svelte';
   import { install } from '../lib/install.svelte.js';
   let hideInstall = $state(localStorage.getItem('mp-hide-install') === '1' || matchMedia('(min-width: 900px)').matches);
@@ -117,7 +118,7 @@
     </div>
 
     {#if trip.line?.coords}<RouteMap line={trip.line} />{/if}
-    {#if unpriced}<div class="note">{unpriced} item{unpriced === 1 ? ' has' : 's have'} no price yet, so {unpriced === 1 ? "it's" : "they're"} placed at a stop you're already making. {app.hasSerpKey ? 'Check prices on the Prices page' : 'Add a SerpApi key in Settings or upload a receipt'} to fill {unpriced === 1 ? 'it' : 'them'} in.</div>{/if}
+    {#if unpriced}<div class="note">{unpriced} item{unpriced === 1 ? ' has' : 's have'} no price yet, so {unpriced === 1 ? "it's" : "they're"} placed at a stop you're already making. {app.hasSerpKey ? 'Check prices on the Prices page' : 'Scan a receipt'} to fill {unpriced === 1 ? 'it' : 'them'} in.</div>{/if}
     {#if plan.missing.length}<div class="note">Not found on this route: {plan.missing.join(', ')}</div>{/if}
 
     <div class="cartbar">
@@ -177,4 +178,5 @@
     </div>
   {/if}
   {/if}
+  <AdSlot />
 </div>

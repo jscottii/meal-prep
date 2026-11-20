@@ -1,5 +1,7 @@
 <script>
-  import { app, saveSettings, itemById, recipeById, savePlan, listBareMinimum, importBareMinimum, toast, owned } from '../lib/db.svelte.js';
+  import AdSlot from '../components/AdSlot.svelte';
+  import { app, saveSettings, itemById, recipeById, savePlan, deletePlan, toast, owned } from '../lib/db.svelte.js';
+  import { pickMix, recipesNeeded } from '../lib/mix.js';
   import { rankByPantry, daysLeft } from '../lib/pantry.js';
   import Weeks from './Weeks.svelte';
   import Calendar from '../components/Calendar.svelte';
@@ -49,7 +51,7 @@
   let sel = $state(Object.fromEntries(app.recipes.filter((r) => r.active || onPlan.has(r.id)).map((r) => [r.id, true])));
   let household = $state(Number(app.plan.household || app.settings.householdSize) || 3);
   let days = $state(app.plan.days?.length ? app.plan.days.map((d) => ({ ...d })) : autoFill(app.recipes.filter((r) => r.active), household));
-  let posts = $state(null), loading = $state(false), importing = $state(''), msg = $state(''), err = $state(''), saving = $state(false);
+  let msg = $state(''), err = $state(''), saving = $state(false);
   let pantry = $state(''), sourceUrl = $state('');
 
   let picked = $derived(app.recipes.filter((r) => sel[r.id]));
@@ -69,30 +71,36 @@
   let useSoon = $derived(app.pantry.filter((p) => { const d = daysLeft(p.use_by); return d != null && d <= 3; }));
   let showPantry = $state(true);
 
-  async function loadPosts() { loading = true; err = ''; try { posts = await listBareMinimum(); } catch (e) { err = e.message; } loading = false; }
-  async function bring(p, use) {
-    importing = p.slug; err = ''; msg = '';
-    try {
-      const imp = p.recipeIds ? { recipeIds: p.recipeIds, title: p.title, url: p.url, already: true } : await importBareMinimum(p.slug);
-      p.recipeIds = imp.recipeIds;
-      if (use) { sel = Object.fromEntries(imp.recipeIds.map((id) => [id, true])); days = autoFill(picked, household); pantry = imp.pantry || ''; sourceUrl = imp.url; }
-      msg = imp.already ? `✓ Picked the ${p.date} week and spread it over Monday–Friday.` :
-        `✓ Brought in ${imp.recipeIds.length} recipes and ${imp.newItems} new shopping items${imp.reused ? ` (${imp.reused} matched to items you already track)` : ''}. ${use ? 'They’re picked and spread over Monday–Friday — adjust anything, then press Start.' : 'They’re in the options below.'}`;
-    } catch (e) { err = e.message; }
-    importing = '';
-  }
   function toggle(id) {
     if (sel[id]) { delete sel[id]; days.forEach((d) => SLOTS.forEach((s) => d[s] === id && (d[s] = ''))); } else sel[id] = true;
     msg = '';
   }
   function setHousehold(v) { const nv = Math.max(1, Number(v) || 1); days.forEach((d) => { if (Number(d.people) === Number(household)) d.people = nv; }); household = nv; }
+  // how to choose this week's recipes
+  let how = $state(''), usePantry = $state(null), mixInfo = $state(null);
+  let needN = $derived(recipesNeeded(shape, household, app.recipes));
+  function pickForMe() {
+    how = 'auto';
+    const recent = new Set(app.weeks.flatMap((w) => w.selected || []));
+    const pantryIds = new Set(app.pantry.filter((p) => p.item_id && !['low', 'out'].includes(p.level)).map((p) => p.item_id));
+    const r = pickMix({ recipes: app.recipes, need: needN, pantryIds, liked: app.settings.cuisines || [], recent, usePantry: !!usePantry });
+    sel = Object.fromEntries(r.ids.map((id) => [id, true]));
+    days = autoFill(picked, household);
+    mixInfo = r;
+  }
+  async function removePlan() {
+    if (!confirm('Delete this week’s plan? Your saved recipes stay.')) return;
+    saving = true; err = '';
+    try { await deletePlan(); sel = {}; days = autoFill([], household); how = ''; mixInfo = null; trip.result = null; toast('Plan deleted'); } catch (e) { err = e.message; }
+    saving = false;
+  }
   async function save(startNew) {
     if (!picked.length) { err = 'Pick at least one recipe.'; return; }
     saving = true; err = '';
     try {
-      await savePlan({ household, shape: $state.snapshot(shape), days: $state.snapshot(days), selected: Object.keys(sel), startNewWeek: startNew, pantry, sourceUrl });
+      await savePlan({ household, shape: $state.snapshot(shape), days: $state.snapshot(autoFill(picked, household)), selected: Object.keys(sel), startNewWeek: startNew, pantry, sourceUrl });
       trip.result = null;
-      if (startNew) { go('trip'); planTrip(); } else toast('✓ Plan saved');
+      if (startNew) { go('trip'); planTrip(); } else toast('✓ Draft saved');
     } catch (e) { err = e.message; }
     saving = false;
   }
@@ -113,71 +121,11 @@
     <button class="quiet" onclick={() => (focusWeek = '')}>← All 6 weeks</button>
     <Weeks {go} focus={focusWeek} showThisWeek={() => { ui.calendar = false; focusWeek = ''; }} />
   {:else}
-  <p class="muted">Pick recipes, say who's eating when, and the shopping list and trip rebuild to match.</p>
   {#if err}<div class="err">⚠️ {err}</div>{/if}
   {#if msg}<div class="ok">{msg}</div>{/if}
 
   <div class="card">
-    <div class="spread"><h3 style="margin:0">🥫 Cook from your pantry</h3>{#if fromPantry.length}<button class="quiet" onclick={() => (showPantry = !showPantry)}>{showPantry ? 'Hide' : 'Show'}</button>{/if}</div>
-    {#if !app.pantry.length}
-      <p class="small muted">Add what you already have and this ranks recipes by what they use up, so you only buy the gap. <button class="quiet" onclick={() => go('pantry')}>Fill your pantry →</button></p>
-    {:else if !fromPantry.length}
-      <p class="small muted">None of your recipes use what's in your pantry yet. Bring in a new week below, then check back. <button class="quiet" onclick={() => go('pantry')}>Pantry →</button></p>
-    {:else if showPantry}
-      {#if useSoon.length}<p class="small" style="margin:6px 0">⏳ Use soon: <b>{useSoon.map((p) => p.name).join(', ')}</b></p>{/if}
-      {#each fromPantry as x}
-        <div class="list-row">
-          <div class="grow">
-            <b>{x.r.title}</b> <span class="pill" class:live={x.share >= 0.5}>{Math.round(x.share * 100)}% on hand</span>
-            {#each x.useUp as u}<span class="pill acc" style="margin-left:4px">uses up {u.toLowerCase()}</span>{/each}
-            <div class="small muted">Have: {x.got.join(', ')}</div>
-            {#if x.need.length}<div class="small muted">Buy: {x.need.slice(0, 5).join(', ')}{x.need.length > 5 ? ` +${x.need.length - 5} more` : ''}</div>{/if}
-          </div>
-          <button class={sel[x.r.id] ? 'ghost' : ''} onclick={() => { toggle(x.r.id); if (sel[x.r.id]) days = autoFill(picked, household); }}>{sel[x.r.id] ? '✓ Added' : 'Add'}</button>
-        </div>
-      {/each}
-      <p class="small muted" style="margin-bottom:0">Ranked by how much of each recipe you already have (by cost), plus anything about to go bad.</p>
-    {/if}
-  </div>
-
-  <div class="card">
-    <h3>1 · New from <i>the bare minimum</i></h3>
-    {#if !posts}
-      <p class="small muted">Tim posts a full week of meals with a shopping list most Fridays.</p>
-      <button onclick={loadPosts} disabled={loading}>{#if loading}<span class="spinner"></span> Checking…{:else}Check for new weeks{/if}</button>
-    {:else}
-      {#each posts.slice(0, 8) as p}
-        <div class="list-row">
-          <div class="grow"><b>{p.title.replace(/^A Full Week of Meals \+ A Shopping List:?\s*/i, 'Week of ')}</b> <span class="small muted">{p.date}</span>
-            {#if !p.free}<span class="pill">subscribers</span>{/if}{#if p.recipeIds}<span class="pill live">in your recipes</span>{/if}
-            <div class="small muted">{p.subtitle}</div></div>
-          {#if p.free}
-            <div class="row" style="flex:none">
-              <button onclick={() => bring(p, true)} disabled={!!importing}>{#if importing === p.slug}<span class="spinner"></span>{:else}Use{/if}</button>
-              {#if !p.recipeIds}<button class="ghost" onclick={() => bring(p, false)} disabled={!!importing}>+ Options</button>{/if}
-            </div>
-          {:else}<a class="small" href={p.url} target="_blank" rel="noopener">Read ↗</a>{/if}
-        </div>
-      {/each}
-      <p class="small muted">"Use" brings in that week's 5 recipes and shopping list and picks them. "+ Options" just adds them to your library to mix and match.</p>
-    {/if}
-    <p style="margin:10px 0 0"><button class="ghost" onclick={() => (finding = !finding)}>🔎 Find recipes by cuisine, search, or link</button></p>
-  </div>
-  {#if finding}<FindRecipes onclose={() => (finding = false)} onadd={(r) => { if (!sel[r.id]) toggle(r.id); }} />{/if}
-
-  <div class="card">
-    <h3>2 · This week's recipes <span class="small muted" style="font-weight:400">({picked.length} picked — tap to remove)</span></h3>
-    {#each picked as r}<button class="chip on" onclick={() => toggle(r.id)}>✓ <span><b>{short(r)}</b><br><span class="small muted">{r.when} · makes {r.servings || '?'} · {weekOf(r)}</span></span></button>{:else}<p class="small muted">Nothing picked yet.</p>{/each}
-    {#if similar.length}
-      <h3 style="margin-top:14px">Similar options <span class="small muted" style="font-weight:400">— share the most ingredients with what you picked</span></h3>
-      {#each similar as x}
-        <button class="chip" onclick={() => toggle(x.r.id)}>+ <span><b>{short(x.r)}</b><br><span class="small muted">{x.r.when} · {weekOf(x.r)} · shares {x.shared.length} of {x.total}{x.shared.length ? ': ' + x.shared.slice(0, 3).map((i) => itemById(i)?.name.toLowerCase()).join(', ') : ''}</span></span></button>
-      {/each}
-    {/if}
-  </div>
-
-  <div class="card">
-    <h3 style="margin:0">3 · Who's eating, and when</h3>
+    <h3 style="margin:0">Who's eating, and when</h3>
     <p class="sentence">
       Prep
       <select class="inl" value={shape.meals.length} onchange={(e) => setMealCount(+e.currentTarget.value)}>{#each [1, 2, 3] as n}<option value={n}>{n}</option>{/each}</select>
@@ -197,38 +145,59 @@
         <button class="quiet" onclick={() => { goalOn = false; saveSettings({ calorieGoal: null, calorieAsked: true }); }}>Remove</button></p>
       {#if picked.length}<p class="small muted" style="margin:0 0 6px">{picked.filter(cal).length ? picked.filter(cal).map((r) => `${short(r)}: ${cal(r)} cal ${cal(r) <= goal * 1.1 ? '✓' : '↑'}`).join(' · ') : 'Recipes you save from a link show their calories here when the site lists them.'}</p>{/if}
     {/if}
-    <details open={app.settings.audience === 'group'}><summary class="small">Adjust day by day</summary>
-    <div class="tw"><table class="wk">
-      <thead><tr><th>Day</th><th>People</th><th>Breakfast</th><th>Lunch</th><th>Dinner</th><th>Snack</th></tr></thead>
-      <tbody>
-        {#each days as d}
-          <tr>
-            <td><b>{d.day.slice(0, 3)}</b></td>
-            <td><span class="ppl"><button onclick={() => (d.people = Math.max(0, d.people - 1))}>−</button><b style="min-width:18px;text-align:center" style:color={Number(d.people) !== Number(household) ? 'var(--accent)' : ''}>{d.people}</b><button onclick={() => (d.people = Math.min(app.settings.audience === 'group' ? 500 : 30, d.people + 1))}>+</button></span></td>
-            {#each SLOTS as s}
-              <td><select bind:value={d[s]}><option value="">—</option>{#each opts(s) as r}<option value={r.id}>{short(r)}</option>{/each}</select></td>
-            {/each}
-          </tr>
+  </div>
+
+  <div class="card">
+    <h3 style="margin:0">What's for dinner this week?</h3>
+    <p class="small muted" style="margin:4px 0 8px">You'll need about {needN.main} main recipe{needN.main === 1 ? '' : 's'}{needN.breakfast ? ', a breakfast' : ''}{needN.snack ? ', a snack' : ''} — the rest is leftovers.</p>
+    {#if app.pantry.length}
+      <p class="small" style="margin:0 0 8px">Cook from what's in your pantry first?
+        <button class="chip" class:on={usePantry === true} onclick={() => { usePantry = true; if (how === 'auto') pickForMe(); }}>Yes</button>
+        <button class="chip" class:on={usePantry === false} onclick={() => { usePantry = false; if (how === 'auto') pickForMe(); }}>No</button></p>
+    {/if}
+    <div class="row" style="gap:6px">
+      <button class:ghost={how !== 'mine'} onclick={() => (how = 'mine')}>🔎 I'll pick</button>
+      <button class:ghost={how !== 'auto'} onclick={pickForMe}>✨ Pick for me</button>
+    </div>
+
+    {#if usePantry && how === 'mine' && fromPantry.length}
+      <p class="small muted" style="margin:10px 0 4px">Uses what you have{useSoon.length ? ` — use soon: ${useSoon.map((p) => p.name).join(', ')}` : ''}</p>
+      {#each fromPantry.slice(0, 5) as x}
+        <div class="list-row"><div class="grow"><b class="small">{x.r.title}</b> <span class="pill" class:live={x.share >= 0.5}>{Math.round(x.share * 100)}% on hand</span>{#if x.need.length}<div class="small muted">Buy: {x.need.slice(0, 4).join(', ')}{x.need.length > 4 ? ` +${x.need.length - 4}` : ''}</div>{/if}</div>
+          <button class={sel[x.r.id] ? 'ghost' : ''} onclick={() => toggle(x.r.id)}>{sel[x.r.id] ? '✓' : 'Add'}</button></div>
+      {/each}
+    {/if}
+
+    {#if how === 'mine'}
+      <div style="margin-top:10px">
+        {#if app.recipes.length}
+          <p class="small muted" style="margin:0 0 4px">Your saved recipes</p>
+          {#each app.recipes as r (r.id)}<button class="chip" class:on={sel[r.id]} onclick={() => toggle(r.id)}>{sel[r.id] ? '✓ ' : ''}{short(r)}</button>{/each}
+        {/if}
+        <FindRecipes onadd={(r) => { if (!sel[r.id]) toggle(r.id); }} />
+      </div>
+    {:else if how === 'auto'}
+      <div style="margin-top:10px">
+        {#if mixInfo}<p class="small muted" style="margin:0 0 6px">{mixInfo.shared ? `These share ${mixInfo.shared} ingredient${mixInfo.shared === 1 ? '' : 's'}, so there's less to buy and waste` : 'Picked for variety'}, and mix up proteins and styles across the week.{#if mixInfo.short.main} You only have {needN.main - mixInfo.short.main} main recipe{needN.main - mixInfo.short.main === 1 ? '' : 's'} saved — tap “I'll pick” to find more.{/if}</p>{/if}
+        {#each picked as r (r.id)}
+          <div class="list-row"><div class="grow"><b class="small">{r.title}</b><div class="small muted">{r.when}{r.cuisine ? ` · ${r.cuisine}` : ''}</div></div><button class="quiet" onclick={() => toggle(r.id)} aria-label="Remove">✕</button></div>
         {/each}
-      </tbody>
-    </table></div>
-    <p class="small muted">Tap − / + for guests or a night out. Set a meal to — if you're eating out.</p>
-    </details>
-    {#if picked.length && app.settings.audience === 'group'}
-      <h3 style="margin-top:12px">How much to make</h3>
-      <table><thead><tr><th>Recipe</th><th class="num">Portions</th><th class="num">Makes</th><th class="num">Make</th></tr></thead><tbody>
-        {#each picked as r}{@const p = por[r.id] || 0}
-          <tr><td>{short(r)}</td><td class="num">{p}</td><td class="num">{r.servings || '?'}</td><td class="num"><b>{p ? (r.servings ? Math.round((p / r.servings) * 100) / 100 + '×' : '1×') : '1×'}</b></td></tr>
-        {/each}
-      </tbody></table>
-      <p class="small muted">The shopping list scales the same way, rounded to whole packages.</p>
+        <button class="ghost" onclick={pickForMe}>🔀 Shuffle</button>
+      </div>
+    {:else if picked.length}
+      <div style="margin-top:10px">{#each picked as r (r.id)}<button class="chip on" onclick={() => toggle(r.id)}>✓ {short(r)}</button>{/each}</div>
     {/if}
   </div>
 
   <div class="card">
-    <h3>4 · Ready?</h3>
-    <p class="small muted"><b>Start the week</b> saves this plan and clears last week's checkmarks (history is kept).</p>
-    <div class="row"><button onclick={() => save(true)} disabled={saving}>{#if saving}<span class="spinner"></span>{/if} 🛒 Start the week</button><button class="ghost" onclick={() => save(false)} disabled={saving}>Save plan</button></div>
+    <h3 style="margin:0">Ready?</h3>
+    <p class="small muted" style="margin:4px 0 8px">{picked.length ? `${picked.length} recipe${picked.length === 1 ? '' : 's'} picked.` : 'Pick at least one recipe.'} <b>Save and start</b> builds your shopping list and clears last week's checkmarks (history is kept).</p>
+    <div class="row">
+      <button onclick={() => save(true)} disabled={saving || !picked.length}>{#if saving}<span class="spinner"></span>{/if} 🛒 Save and start</button>
+      <button class="ghost" onclick={() => save(false)} disabled={saving || !picked.length}>Save draft</button>
+      <button class="quiet" onclick={removePlan} disabled={saving}>Delete plan</button>
+    </div>
   </div>
   {/if}
+  <AdSlot />
 </div>
