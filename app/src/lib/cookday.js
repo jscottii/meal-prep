@@ -373,3 +373,38 @@ export function equipmentFor(recipes) {
   temps.sort((a, b) => parseInt(b) - parseInt(a));
   return { items: [...found.values()].map((e) => ({ ...e, optional: /slow cooker/i.test(e.name) && e.optional })).sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name)), temps };
 }
+
+/* ---------------- how long each step takes ---------------- */
+/** "1:30" / "12:55 pm" → minutes since midnight-ish (a cook day runs forward, so a smaller clock time means it rolled past 12). */
+function clockMins(t) {
+  const m = String(t || '').match(/(\d{1,2}):(\d{2})\s*([ap])?/i);
+  if (!m) return null;
+  let h = Number(m[1]) % 12;
+  if (m[3] && /p/i.test(m[3])) h += 12;
+  return h * 60 + Number(m[2]);
+}
+/** A time written in the step itself ("Chop everything first (25 min)"), not a cook time. */
+function statedMins(text) {
+  const m = String(text).match(/\((?:about |~)?(\d+)\s*(?:–|-|to)?\s*(\d+)?\s*(min|minutes|hr|hours?)\)/i);
+  if (!m) return null;
+  return Number(m[1]) * (/^h/i.test(m[3]) ? 60 : 1);
+}
+/** Minutes for each game-plan step: the gap to the next step's clock time, or a time stated in the step. Last step: null unless stated. */
+export function stepMinutes(items) {
+  const raw = items.map((it) => clockMins(it.time));
+  // unroll the 12-hour clock: 12:30 → 12:55 → 1:00 keeps going forward
+  let add = 0, prev = null;
+  const abs = raw.map((v) => { if (v == null) return null; if (prev != null && v + add < prev - 60) add += 12 * 60; prev = v + add; return v + add; });
+  return items.map((it, i) => {
+    const stated = statedMins(`${it.label || ''} ${it.text}`);
+    if (stated) return stated;
+    const next = abs.slice(i + 1).find((v) => v != null);
+    return abs[i] != null && next != null && next > abs[i] ? next - abs[i] : null;
+  });
+}
+export function fmtMins(m, approx = false) {
+  if (m == null || !(m > 0)) return '';
+  const r = m >= 60 ? Math.round(m / 5) * 5 : Math.round(m);
+  const h = Math.floor(r / 60), mm = r % 60;
+  return (approx ? '~' : '') + (h ? `${h} hr${mm ? ` ${mm} min` : ''}` : `${mm} min`);
+}

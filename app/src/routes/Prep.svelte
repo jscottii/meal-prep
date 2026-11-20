@@ -6,7 +6,7 @@
   import { untrack } from 'svelte';
   import { app, portions, guideFor, loadGuide, updatePrep, toast, removePantry, addPantry } from '../lib/db.svelte.js';
   import { usedByRecipes } from '../lib/pantry.js';
-  import { scaleLine, scaleStepHtml, prepLists, cookMinutes, alignSteps, isPrepStep, durationOf, equipmentFor } from '../lib/cookday.js';
+  import { scaleLine, scaleStepHtml, prepLists, cookMinutes, alignSteps, isPrepStep, durationOf, equipmentFor, stepMinutes, fmtMins } from '../lib/cookday.js';
   import { unlockAudio, holdAwake } from '../lib/timers.js';
   import { tap } from '../lib/native.js';
   let { go } = $props();
@@ -61,7 +61,7 @@
   let steps = $derived.by(() => {
     const out = [], covered = new Set(), before = [];
     guides.forEach((g) => g.guide?.sections.forEach((s) => { if (/before you start|bare minimum/i.test(s.title)) before.push(s); }));
-    out.push({ kind: 'setup', title: 'Get set up', before });
+    out.push({ kind: 'setup', title: 'Get set up', before, mins: 10, approx: true });
     const timeSteps = [];
     guides.forEach((g) => {
       if (!g.guide) return;
@@ -76,20 +76,28 @@
         covered.add(r.id);
         a.forEach((idx, j) => { let e = subs[idx].find((x) => x.r.id === r.id); if (!e) subs[idx].push((e = { r, js: [] })); e.js.push(j); });
       });
-      items.forEach((it, idx) => timeSteps.push({ kind: 'time', key: it.key, title: it.time ? `${it.time} · ${firstWords(it.text)}` : firstWords(it.text), text: it.text, subs: subs[idx], prep: isPrepStep(it.text) }));
+      const mins = stepMinutes(items);
+      items.forEach((it, idx) => {
+        // no next step to measure against (usually dinner): estimate from its recipe steps, else 15 min
+        let m = mins[idx], approx = false;
+        if (m == null) { const d = subs[idx].flatMap((e) => e.js.map((j) => durationOf(e.r.steps[j])?.maxMins || 0)); m = Math.max(15, ...d); approx = true; }
+        timeSteps.push({ kind: 'time', key: it.key, mins: m, approx, title: firstWords(it.text), text: it.text, subs: subs[idx], prep: isPrepStep(it.text) });
+      });
     });
     // knife prep + seasonings go on the plan's "chop everything" step, or get their own steps before it
     const chop = timeSteps.find((t) => t.prep);
     if (chop) { chop.knife = lists.knife.length > 0; chop.spices = lists.spices.length > 0; }
     else {
-      if (lists.knife.length) out.push({ kind: 'knife', title: 'Knife prep' });
-      if (lists.spices.length) out.push({ kind: 'spices', title: 'Measure the seasonings' });
+      const cuts = lists.knife.reduce((a, g) => a + g.items.length, 0);
+      if (lists.knife.length) out.push({ kind: 'knife', title: 'Knife prep', mins: Math.max(10, Math.round(cuts * 3 / 5) * 5), approx: true });
+      if (lists.spices.length) out.push({ kind: 'spices', title: 'Measure the seasonings', mins: Math.max(5, lists.spices.length * 2), approx: true });
     }
     out.push(...timeSteps);
     // recipes the game plan doesn't cover: longest cook first, so the oven works while you do the rest
     recipes.filter((r) => !covered.has(r.id)).sort((a, b) => cookMinutes(b) - cookMinutes(a))
-      .forEach((r) => out.push({ kind: 'recipe', title: r.title, subs: [{ r, js: r.steps.map((_, j) => j) }] }));
-    out.push({ kind: 'pack', title: 'Pack it up' });
+      .forEach((r) => out.push({ kind: 'recipe', title: r.title, mins: cookMinutes(r) + 5 * r.steps.length, approx: true, subs: [{ r, js: r.steps.map((_, j) => j) }] }));
+    out.push({ kind: 'pack', title: 'Pack it up', mins: 15, approx: true });
+    out.forEach((st) => (st.label = `${fmtMins(st.mins, st.approx)}${st.mins ? ' · ' : ''}${st.title}`));
     return out;
   });
 
@@ -108,6 +116,8 @@
   const stepDone = (st) => { const k = stepKeys(st); return k.length > 0 && k.every((x) => done[x]); };
   let allKeys = $derived(steps.flatMap((st) => stepKeys(st)));
   let doneCount = $derived(allKeys.filter((k) => done[k]).length);
+  let totalMins = $derived(steps.reduce((a, st) => a + (st.mins || 0), 0));
+  let leftMins = $derived(steps.filter((st) => !stepDone(st)).reduce((a, st) => a + (st.mins || 0), 0));
   let firstUndone = $derived.by(() => { const i = steps.findIndex((st) => stepKeys(st).some((k) => !done[k])); return i < 0 ? steps.length - 1 : i; });
   // which step a checkmark lives on (so ticking the last item on a step ticks the step in the overview)
   let owner = $derived.by(() => { const m = {}; steps.forEach((st) => stepKeys(st).forEach((k) => { if (!m[k]) m[k] = st; })); return m; });
@@ -241,7 +251,7 @@
         <span class="switch"><input type="checkbox" bind:checked={awake} /><span></span></span> Keep screen on
       </label>
     </div>
-    <p class="small muted" style="margin:-2px 0 6px">{doneCount} of {allKeys.length} done</p>
+    <p class="small muted" style="margin:-2px 0 6px">{doneCount} of {allKeys.length} done · about {fmtMins(totalMins)} total{leftMins && leftMins < totalMins ? `, ${fmtMins(leftMins)} to go` : ''}</p>
     <div style="height:6px;background:#efe7dc;border-radius:99px;overflow:hidden;margin-bottom:10px"><div style="height:100%;background:var(--green);width:{allKeys.length ? (doneCount / allKeys.length) * 100 : 0}%"></div></div>
     {#if err}<div class="err">⚠️ {err}</div>{/if}
     {#each missingGuides as g}
@@ -252,6 +262,7 @@
     {#if mode === 'steps' && cur}
      <div class="prep-grid"><div>
       <p class="small muted" style="margin:0">Step {idx + 1} of {steps.length}</p>
+      <p class="small" style="margin:6px 0 0;color:var(--accent);font-weight:650">⏱ {fmtMins(cur.mins, cur.approx) || '—'}</p>
       <h2 style="margin:2px 0 10px">{stepDone(cur) ? '✓ ' : ''}{cur.title}</h2>
 
       {#if cur.kind === 'setup'}
@@ -307,16 +318,16 @@
 
       <div class="stepnav">
         <button class="ghost" onclick={() => move(-1)} disabled={idx === 0}>← Back</button>
-        <select value={idx} onchange={(e) => { at = Number(e.currentTarget.value); window.scrollTo(0, 0); }} aria-label="Jump to step">{#each steps as s, i}<option value={i}>{i + 1}. {stepDone(s) ? '✓ ' : ''}{s.title}</option>{/each}</select>
+        <select value={idx} onchange={(e) => { at = Number(e.currentTarget.value); window.scrollTo(0, 0); }} aria-label="Jump to step">{#each steps as s, i}<option value={i}>{i + 1}. {stepDone(s) ? '✓ ' : ''}{s.label}</option>{/each}</select>
         <button onclick={doneNext}>{idx >= steps.length - 1 ? 'Done ✓' : 'Done → Next'}</button>
       </div>
      </div>
      <aside class="prep-aside card">
        <h3>All steps</h3>
-       {#each steps as s, i}<button class:on={i === idx} class:done={stepDone(s)} onclick={() => { at = i; window.scrollTo(0, 0); }}>{stepDone(s) ? '✓' : i + 1}. {s.title}</button>{/each}
+       {#each steps as s, i}<button class:on={i === idx} class:done={stepDone(s)} onclick={() => { at = i; window.scrollTo(0, 0); }}>{stepDone(s) ? '✓' : i + 1}. {s.label}</button>{/each}
      </aside></div>
     {:else}
-      <button style="width:100%;margin-bottom:10px" onclick={resume}>▶ {doneCount ? 'Pick up where you left off' : 'Start cooking'}: step {firstUndone + 1} · {steps[firstUndone]?.title}</button>
+      <button style="width:100%;margin-bottom:10px" onclick={resume}>▶ {doneCount ? 'Pick up where you left off' : 'Start cooking'}: step {firstUndone + 1} · {steps[firstUndone]?.label}</button>
       <div class="card">
         <h3>What to make</h3>
         {#each recipes as r}
@@ -337,7 +348,8 @@
             {#each g.guide.sections as s, si}
               {#if s.kind === 'timeline'}
                 <h3 style="margin-top:10px">{s.title}</h3>
-                {#each s.items as it, ii}{@render box(`t|${g.url}|${si}|${ii}`, `${it.time ? `<b>${esc(it.time)}</b> · ` : ''}${it.label ? `<b>${esc(it.label)}</b> — ` : ''}${esc(it.text)}`)}{/each}
+                {@const mins = stepMinutes(s.items)}
+                {#each s.items as it, ii}{@render box(`t|${g.url}|${si}|${ii}`, `${mins[ii] ? `<b>${fmtMins(mins[ii])}</b> · ` : ''}${it.label ? `<b>${esc(it.label)}</b> — ` : ''}${esc(it.text)}`)}{/each}
               {:else}
                 <details style="margin-top:8px"><summary><b>{s.title}</b> <span class="small muted">({s.items.length})</span></summary>
                   <ul style="margin:6px 0 0;padding-left:18px">{#each s.items as it}<li class="small" style="margin:4px 0">{#if it.label}<b>{it.label}</b> — {/if}{it.text}</li>{/each}</ul>
