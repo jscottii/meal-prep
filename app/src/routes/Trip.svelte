@@ -2,7 +2,11 @@
   import InstallApp from '../components/InstallApp.svelte';
   import { install } from '../lib/install.svelte.js';
   let hideInstall = $state(localStorage.getItem('mp-hide-install') === '1' || matchMedia('(min-width: 900px)').matches);
-  import { app, need, portions, itemById, setHave, toast, owned, updatePantry } from '../lib/db.svelte.js';
+  import { app, need, portions, itemById, setHave, toast, owned, updatePantry, tripCart, editPurchase } from '../lib/db.svelte.js';
+  import CartEditor from '../components/CartEditor.svelte';
+  import Carts from './Carts.svelte';
+  let view = $state(sessionStorage.getItem('mp-trip-view') || 'week');
+  $effect(() => { sessionStorage.setItem('mp-trip-view', view); });
   import { covers } from '../lib/pantry.js';
   import { shareText, tap } from '../lib/native.js';
   import { trip, planTrip, chosen, drawLine, useMyLocation, startAddress } from '../lib/trip.svelte.js';
@@ -24,6 +28,15 @@
   let mapsLink = $derived(plan ? directionsUrl(startAddress(), app.settings.homeAddress, plan.stores.map((s) => byId[s.id]).filter(Boolean)) : '');
 
   $effect(() => { if (app.ready && app.household && !trip.result && !trip.busy && !trip.error && left) planTrip(); });
+
+  // the cart: what's checked off and what it cost
+  let cart = $derived(tripCart());
+  let cartTotal = $derived(cart.reduce((a, c) => a + (c.paid || 0), 0));
+  let cartOf = $derived(Object.fromEntries(cart.map((c) => [c.item.id, c])));
+  let toGo = $derived(plan ? plan.stores.reduce((a, st) => a + st.items.filter((it) => !itemById(it.id)?.have).reduce((b, it) => b + (it.price || 0), 0), 0) : 0);
+  let editing = $state('');
+  async function saveEdit(c, v) { try { await editPurchase(c.p, v); editing = ''; toast(`✓ ${c.item.name}: ${fmt(c.p.paid)}`); } catch (e) { toast(e.message); } }
+  const big = $derived(app.settings.audience === 'group');
 
   async function tick(it, storeId) {
     tap();
@@ -47,7 +60,14 @@
 
 <div class="page">
   {#if !hideInstall && !install.installed}<div style="position:relative"><InstallApp compact /><button class="quiet small" style="position:absolute;right:4px;bottom:2px" onclick={() => { hideInstall = true; localStorage.setItem('mp-hide-install', '1'); }}>Not now</button></div>{/if}
-  <div class="spread"><h1>This week's trip</h1><button class="quiet" onclick={() => go('plan')}>Plan a new week →</button></div>
+  <div class="spread"><h1>{view === 'carts' ? 'Project carts' : "This week's trip"}</h1>{#if view === 'week'}<button class="quiet" onclick={() => go('plan')}>Plan a new week →</button>{/if}</div>
+  <div class="seg" style="margin:4px 0 10px">
+    <button class:on={view === 'week'} onclick={() => (view = 'week')}>Weekly trip</button>
+    <button class:on={view === 'carts'} onclick={() => (view = 'carts')}>Projects & events{app.carts.length ? ` (${app.carts.length})` : ''}</button>
+  </div>
+  {#if view === 'carts'}
+    <Carts {go} />
+  {:else}
   <p class="muted small">
     {active.length} recipe{active.length === 1 ? '' : 's'}{Object.keys(por).length ? ` · ${Object.values(por).reduce((a, x) => a + x.portions, 0)} portions planned` : ''} · {left} item{left === 1 ? '' : 's'} to buy{bought.length ? `, ${bought.length} already bought` : ''}
   </p>
@@ -76,11 +96,11 @@
     <div class="hero"><h2>Nothing left to buy 🎉</h2><p class="muted">Everything on this week's list is checked off. <a href="#plan" onclick={(e) => { e.preventDefault(); go('plan'); }}>Plan next week</a>.</p></div>
   {:else if plan}
     <div class="hero">
-      <div class="spread"><div><div class="muted small">Best trip · {plan.stores.length} stop{plan.stores.length === 1 ? '' : 's'}</div><div class="big">{fmt(plan.total)}</div><div class="small muted">all-in: groceries + gas + your time</div></div>
+      <div class="spread"><div><div class="muted small">{trip.choice === 'fastest' ? 'Fastest' : trip.choice === 'cheapest' ? 'Cheapest' : 'Best'} trip · {plan.stores.length} stop{plan.stores.length === 1 ? '' : 's'}</div><div class="big">{fmt(plan.groceries)}</div><div class="small muted">groceries · plus about {fmt(plan.fuel)} gas</div></div>
         <a class="btn" href={mapsLink} target="_blank" rel="noopener">Directions ↗</a>
         <button class="ghost" onclick={shareList}>Share list</button></div>
       <div class="row" style="margin-top:12px">
-        <div class="stat"><b>{fmt(plan.groceries)}</b><span>groceries</span></div>
+        <div class="stat"><b>{fmt(plan.groceries + plan.fuel)}</b><span>with gas</span></div>
         <div class="stat"><b>{plan.driveMin + plan.stopMin} min</b><span>{plan.driveMin} driving</span></div>
         <div class="stat"><b>{plan.miles} mi</b><span>{fmt(plan.fuel)} gas</span></div>
       </div>
@@ -96,6 +116,12 @@
     {#if unpriced}<div class="note">{unpriced} item{unpriced === 1 ? ' has' : 's have'} no price yet, so {unpriced === 1 ? "it's" : "they're"} placed at a stop you're already making. {app.hasSerpKey ? 'Check prices on the Prices page' : 'Add a SerpApi key in Settings or upload a receipt'} to fill {unpriced === 1 ? 'it' : 'them'} in.</div>{/if}
     {#if plan.missing.length}<div class="note">Not found on this route: {plan.missing.join(', ')}</div>{/if}
 
+    <div class="cartbar">
+      <div><span class="small muted">🛒 In your cart</span><br><b class="big">{fmt(cartTotal)}</b> <span class="small muted">· {cart.length} item{cart.length === 1 ? '' : 's'}</span></div>
+      <div style="text-align:right"><span class="small muted">Still to get</span><br><b>{fmt(toGo)}</b> <span class="small muted">· {left} item{left === 1 ? '' : 's'}</span></div>
+    </div>
+    {#if big && cart.length}<p class="small muted" style="margin:-4px 0 8px">{Object.values(por).reduce((a, x) => a + x.portions, 0) ? `About ${fmt((cartTotal + toGo) / Object.values(por).reduce((a, x) => a + x.portions, 0))} per portion so far.` : ''}</p>{/if}
+
     {#each plan.stores as st, i}
       {@const loc = byId[st.id]}
       <div class="stop">
@@ -106,8 +132,18 @@
           <label class="check" style:opacity={item?.have ? 0.45 : 1}>
             <input type="checkbox" checked={!!item?.have} onchange={(e) => (e.currentTarget.checked ? tick(it, st.id) : untick(it.id))} />
             <span class="grow"><b style:text-decoration={item?.have ? 'line-through' : ''}>{it.name}</b> <span class="muted small">{item?.qty}{n[it.id] && n[it.id] !== item?.units ? ` · buy ${n[it.id]}` : ''}</span><br>
-              <span class="small muted">{it.source === 'unpriced' ? 'price not checked yet' : fmt(it.price)} <span class="pill" class:live={it.source === 'live' || it.source === 'receipt'}>{src(it.source)}</span></span></span>
+              {#if item?.have && cartOf[it.id]}
+                {@const c = cartOf[it.id]}
+                <span class="small"><b>{c.paid != null ? fmt(c.paid) : 'no price'}</b>{c.p?.qty ? ` · ${c.p.qty} ${c.p.unit}${c.p.unit_price ? ` @ ${fmt(c.p.unit_price)}` : ''}` : ''}{!c.edited ? ' (estimate)' : ''}</span>
+                {#if c.p}<button type="button" class="quiet" style="padding:0 6px" onclick={(e) => { e.preventDefault(); editing = editing === it.id ? '' : it.id; }}>Edit</button>{/if}
+              {:else}
+                <span class="small muted">{it.source === 'unpriced' ? 'price not checked yet' : fmt(it.price)} <span class="pill" class:live={it.source === 'live' || it.source === 'receipt'}>{src(it.source)}</span></span>
+              {/if}</span>
           </label>
+          {#if editing === it.id && cartOf[it.id]?.p}
+            {@const c = cartOf[it.id]}
+            <CartEditor large={big} line={{ qty: c.p.qty ?? n[it.id] ?? 1, unit: c.p.unit || 'each', unit_price: c.p.unit_price, total: c.paid }} onsave={(v) => saveEdit(c, v)} oncancel={() => (editing = '')} />
+          {/if}
         {/each}
       </div>
     {/each}
@@ -124,5 +160,6 @@
     <div class="card"><h3>Already bought ({bought.length})</h3>
       {#each bought as b}<div class="list-row"><span>{b.name} <span class="small muted">{b.haveOn}</span></span><button class="quiet" onclick={() => untick(b.id)}>Undo</button></div>{/each}
     </div>
+  {/if}
   {/if}
 </div>

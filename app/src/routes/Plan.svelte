@@ -1,7 +1,9 @@
 <script>
-  import { app, itemById, recipeById, savePlan, listBareMinimum, importBareMinimum, toast, owned } from '../lib/db.svelte.js';
+  import { app, saveSettings, itemById, recipeById, savePlan, listBareMinimum, importBareMinimum, toast, owned } from '../lib/db.svelte.js';
   import { rankByPantry, daysLeft } from '../lib/pantry.js';
   import Weeks from './Weeks.svelte';
+  import FindRecipes from '../components/FindRecipes.svelte';
+  let finding = $state(false);
   import { trip, planTrip } from '../lib/trip.svelte.js';
   let { go } = $props();
   let view = $state(localStorage.getItem('mp-week-view') || 'this');
@@ -82,10 +84,20 @@
 </script>
 
 <div class="page">
+  {#if !app.settings.audienceAsked}
+    <div class="card">
+      <h3 style="margin-top:0">Who are you cooking for?</h3>
+      <div class="row">
+        <button onclick={() => saveSettings({ audience: 'household', audienceAsked: true })}>🏠 My household</button>
+        <button class="ghost" onclick={() => saveSettings({ audience: 'group', audienceAsked: true })}>👥 A big group (10+)</button>
+      </div>
+      <p class="small muted" style="margin-bottom:0">Big-group mode shows portions, scaling and cost per person. Change it anytime in More → Settings.</p>
+    </div>
+  {/if}
   <h1>{view === 'weeks' ? 'Plan ahead' : 'Plan the week'}</h1>
   <div class="seg" style="margin:4px 0 8px">
     <button class:on={view === 'this'} onclick={() => (view = 'this')}>This week</button>
-    <button class:on={view === 'weeks'} onclick={() => (view = 'weeks')}>Next weeks{app.plan.weeks?.length ? ` (${app.plan.weeks.length})` : ''}</button>
+    <button class:on={view === 'weeks'} onclick={() => (view = 'weeks')}>Next weeks{app.weeks.length ? ` (${app.weeks.length})` : ''}</button>
   </div>
   {#if view === 'weeks'}
     <Weeks {go} showThisWeek={() => (view = 'this')} />
@@ -138,7 +150,9 @@
       {/each}
       <p class="small muted">"Use" brings in that week's 5 recipes and shopping list and picks them. "+ Options" just adds them to your library to mix and match.</p>
     {/if}
+    <p style="margin:10px 0 0"><button class="ghost" onclick={() => (finding = !finding)}>🔎 Find recipes by cuisine, search, or link</button></p>
   </div>
+  {#if finding}<FindRecipes onclose={() => (finding = false)} onadd={(r) => { if (!sel[r.id]) toggle(r.id); }} />{/if}
 
   <div class="card">
     <h3>2 · This week's recipes <span class="small muted" style="font-weight:400">({picked.length} picked — tap to remove)</span></h3>
@@ -154,7 +168,7 @@
   <div class="card">
     <div class="spread"><h3 style="margin:0">3 · Who's eating, and when</h3></div>
     <div class="row" style="margin:8px 0">
-      <label class="small">Usually feeding <input type="number" min="1" max="20" value={household} onchange={(e) => setHousehold(e.currentTarget.value)} style="width:64px;display:inline-block"> people</label>
+      <label class="small">Usually feeding <input type="number" min="1" max={app.settings.audience === 'group' ? 500 : 20} value={household} onchange={(e) => setHousehold(e.currentTarget.value)} style="width:64px;display:inline-block"> people</label>
       <button class="ghost" onclick={() => (days = autoFill(picked, household))}>✨ Fill in Mon–Fri</button>
       <button class="ghost" onclick={() => days.forEach((d) => SLOTS.forEach((s) => (d[s] = '')))}>Clear</button>
     </div>
@@ -164,7 +178,7 @@
         {#each days as d}
           <tr>
             <td><b>{d.day.slice(0, 3)}</b></td>
-            <td><span class="ppl"><button onclick={() => (d.people = Math.max(0, d.people - 1))}>−</button><b style="min-width:18px;text-align:center" style:color={Number(d.people) !== Number(household) ? 'var(--accent)' : ''}>{d.people}</b><button onclick={() => (d.people = Math.min(30, d.people + 1))}>+</button></span></td>
+            <td><span class="ppl"><button onclick={() => (d.people = Math.max(0, d.people - 1))}>−</button><b style="min-width:18px;text-align:center" style:color={Number(d.people) !== Number(household) ? 'var(--accent)' : ''}>{d.people}</b><button onclick={() => (d.people = Math.min(app.settings.audience === 'group' ? 500 : 30, d.people + 1))}>+</button></span></td>
             {#each SLOTS as s}
               <td><select bind:value={d[s]}><option value="">—</option>{#each opts(s) as r}<option value={r.id}>{short(r)}</option>{/each}</select></td>
             {/each}
@@ -173,7 +187,7 @@
       </tbody>
     </table></div>
     <p class="small muted">Tap − / + for guests or a night out. Set a meal to — if you're eating out.</p>
-    {#if picked.length}
+    {#if picked.length && app.settings.audience === 'group'}
       <h3 style="margin-top:12px">How much to make</h3>
       <table><thead><tr><th>Recipe</th><th class="num">Portions</th><th class="num">Makes</th><th class="num">Make</th></tr></thead><tbody>
         {#each picked as r}{@const p = por[r.id] || 0}

@@ -1,8 +1,10 @@
 <script>
   import { untrack } from 'svelte';
-  import { app, need, saveWeeks, startUpcoming, toast, owned } from '../lib/db.svelte.js';
+  import { app, need, saveWeek, deleteWeek, startUpcoming, toast, owned } from '../lib/db.svelte.js';
+  import { onDestroy } from 'svelte';
   import { neededUnits, autoFillPlan } from '../lib/planner.js';
   import { covers } from '../lib/pantry.js';
+  import FindRecipes from '../components/FindRecipes.svelte';
   import { linesFor, orderInstacart, orderAmazon, copyAndOpen, shareList, STORES_LINKS } from '../lib/order.js';
   let { go, showThisWeek } = $props();
 
@@ -14,15 +16,29 @@
   const nice = (s) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); };
   const thisWeek = app.plan.weekOf || iso(monday());
 
-  let weeks = $state(structuredClone($state.snapshot(app.plan.weeks || [])).sort((a, b) => a.start.localeCompare(b.start)));
-  let open = $state({}), busy = $state(''), err = $state('');
+  let weeks = $state(structuredClone($state.snapshot(app.weeks)));
+  let open = $state({}), busy = $state(''), err = $state(''), saved = $state(''), finding = $state('');
 
-  // save a moment after the last change
-  let t = null;
-  $effect(() => { const snap = $state.snapshot(weeks); untrack(() => { clearTimeout(t); t = setTimeout(() => saveWeeks(snap).catch((e) => (err = e.message)), 600); }); });
+  // each week saves itself a moment after you change it; leaving the screen saves right away
+  const timers = {}, last = {};
+  weeks.forEach((w) => (last[w.start] = JSON.stringify(w)));
+  function flush(start) {
+    clearTimeout(timers[start]); delete timers[start];
+    const w = weeks.find((x) => x.start === start); if (!w) return;
+    const snap = $state.snapshot(w), js = JSON.stringify(snap);
+    if (last[start] === js) return;
+    saved = 'Saving…';
+    saveWeek(snap).then(() => { last[start] = js; saved = 'Saved ✓'; }).catch((e) => { err = e.message; saved = ''; });
+  }
+  $effect(() => {
+    weeks.forEach((w) => { const js = JSON.stringify($state.snapshot(w)); untrack(() => { if (last[w.start] !== js) { clearTimeout(timers[w.start]); timers[w.start] = setTimeout(() => flush(w.start), 500); } }); });
+  });
+  const flushAll = () => Object.keys(timers).forEach(flush);
+  onDestroy(flushAll);
+  $effect(() => { const f = () => document.visibilityState === 'hidden' && flushAll(); document.addEventListener('visibilitychange', f); return () => document.removeEventListener('visibilitychange', f); });
 
   const byId = (id) => app.recipes.find((r) => r.id === id);
-  const kind = (r) => { const w = String(r?.when || '').toLowerCase(); return /breakfast/.test(w) ? 'breakfast' : /snack|dessert|treat/.test(w) ? 'snack' : 'main'; };
+  const kind = (r) => { const w = String(r?.when || '').toLowerCase(); return /breakfast/.test(w) ? 'breakfast' : /snack|dessert|treat|side/.test(w) ? 'snack' : 'main'; };
   const priceOf = (id) => { const v = Object.values(app.prices[id] || {}).map((e) => e?.price).filter((x) => x > 0); return v.length ? Math.min(...v) : 0; };
 
   function addWeek() {
@@ -30,18 +46,21 @@
     weeks.push({ start: addDays(last, 7), household: Number(app.plan.household) || 3, selected: [], days: autoFillPlan([], Number(app.plan.household) || 3, DAYS5).days });
     open[weeks.at(-1).start] = true;
   }
-  function removeWeek(w) { weeks.splice(weeks.indexOf(w), 1); }
+  function removeWeek(w) { clearTimeout(timers[w.start]); const s0 = w.start; weeks.splice(weeks.indexOf(w), 1); deleteWeek(s0).catch((e) => (err = e.message)); }
   function spread(w) { w.days = autoFillPlan(w.selected.map(byId).filter(Boolean), w.household, DAYS5).days; }
   function toggleRecipe(w, id) { const i = w.selected.indexOf(id); if (i >= 0) w.selected.splice(i, 1); else w.selected.push(id); spread(w); }
   function setPeople(w, v) { const nv = Math.max(1, Number(v) || 1); w.days.forEach((d) => { if (Number(d.people) === Number(w.household)) d.people = nv; }); w.household = nv; }
-  // fill a week with recipes you haven't had lately: one breakfast, up to three mains
+  // fill a week with recipes you haven't had lately: one breakfast, three mains, one snack — leaning toward the cuisines you like
   function suggest(w) {
     const recent = new Set([...(app.plan.days || []).flatMap((d) => SLOTS.map((s) => d[s])), ...weeks.filter((x) => x !== w).flatMap((x) => x.selected)]);
-    const fresh = app.recipes.filter((r) => !recent.has(r.id));
-    const pool = fresh.length >= 3 ? fresh : app.recipes;
-    const pick = [...pool.filter((r) => kind(r) === 'breakfast').slice(0, 1), ...pool.filter((r) => kind(r) === 'main').slice(0, 3)];
+    const liked = (app.settings.cuisines || []).map((c) => c.toLowerCase());
+    const score = (r) => (recent.has(r.id) ? 0 : 2) + (liked.some((c) => String(r.cuisine || '').toLowerCase().includes(c) || c.includes(String(r.cuisine || '#').toLowerCase())) ? 1 : 0) + Math.random() * 0.9;
+    const ranked = [...app.recipes].sort((a, b) => score(b) - score(a));
+    const pick = [...ranked.filter((r) => kind(r) === 'breakfast').slice(0, 1), ...ranked.filter((r) => kind(r) === 'main').slice(0, 3), ...ranked.filter((r) => kind(r) === 'snack').slice(0, 1)];
     w.selected = pick.map((r) => r.id); spread(w);
+    if (app.recipes.length < 10) toast('Tip: tap 🔎 Find recipes to add more variety');
   }
+  const groups = [['Breakfast', 'breakfast'], ['Lunch & dinner', 'main'], ['Snacks, sides & desserts', 'snack']];
 
   // each week's shopping list (only the recipes placed in that week)
   const offPlan = $derived(app.recipes.map((r) => ({ ...r, active: false })));
@@ -67,7 +86,8 @@
   }
   async function makeCurrent(w) {
     busy = 'start' + w.start;
-    try { await startUpcoming(w.start); weeks = structuredClone($state.snapshot(app.plan.weeks || [])); toast(`✓ Week of ${nice(w.start)} is now this week`); go('trip'); } catch (e) { err = e.message; }
+    flush(w.start);
+    try { await startUpcoming(w.start); weeks = structuredClone($state.snapshot(app.weeks)); toast(`✓ Week of ${nice(w.start)} is now this week`); go('trip'); } catch (e) { err = e.message; }
     busy = '';
   }
 </script>
@@ -103,6 +123,7 @@
 
 <div>
   {#if err}<div class="err">⚠️ {err}</div>{/if}
+  {#if saved}<p class="small muted" style="text-align:right;margin:0 0 4px">{saved}</p>{/if}
 
   <div class="card">
     <div class="spread"><h3 style="margin:0">This week <span class="small muted" style="font-weight:400">· {nice(thisWeek)}</span></h3><button class="quiet" onclick={showThisWeek}>Edit →</button></div>
@@ -130,9 +151,17 @@
         {#each w.selected as id}{@const r = byId(id)}{#if r}<button class="chip on" onclick={() => toggleRecipe(w, id)}>✓ {r.title}</button>{/if}{/each}
         <select style="width:auto;margin-top:6px" value="" onchange={(e) => { if (e.currentTarget.value) toggleRecipe(w, e.currentTarget.value); e.currentTarget.value = ''; }}>
           <option value="">+ Add a recipe…</option>
-          {#each app.recipes.filter((r) => !w.selected.includes(r.id)) as r}<option value={r.id}>{r.title}{r.when ? ` · ${r.when}` : ''}</option>{/each}
+          {#each groups as [label, k]}
+            {@const rs = app.recipes.filter((r) => kind(r) === k && !w.selected.includes(r.id))}
+            {#if rs.length}<optgroup {label}>{#each rs as r}<option value={r.id}>{r.title}{r.cuisine ? ` · ${r.cuisine}` : ''}</option>{/each}</optgroup>{/if}
+          {/each}
         </select>
+        <button class="quiet" onclick={() => (finding = finding === w.start ? '' : w.start)}>🔎 Find recipes</button>
       </div>
+
+      {#if finding === w.start}
+        <div style="margin-top:8px"><FindRecipes onclose={() => (finding = '')} onbm={showThisWeek} onadd={(r) => { if (!w.selected.includes(r.id)) { w.selected.push(r.id); spread(w); } }} /></div>
+      {/if}
 
       {#if w.selected.length}
         <details style="margin-top:8px" bind:open={open[w.start]}>
@@ -162,7 +191,8 @@
 
   <div class="row">
     <button onclick={addWeek} disabled={weeks.length >= 6}>+ Add week of {nice(addDays(weeks.at(-1)?.start || thisWeek, 7))}</button>
-    {#if app.recipes.length < 8}<button class="quiet" onclick={showThisWeek}>Bring in more Bare Minimum weeks →</button>{/if}
+    <button class="quiet" onclick={() => (finding = finding === 'top' ? '' : 'top')}>🔎 Find more recipes</button>
   </div>
+  {#if finding === 'top'}<FindRecipes onclose={() => (finding = '')} onbm={showThisWeek} />{/if}
   <p class="small muted">Plan up to six weeks ahead. Each week keeps its own shopping list; when a week arrives, tap <b>Start this week</b> and it becomes your trip and cook day.</p>
 </div>

@@ -2,7 +2,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { SUPABASE_URL, SUPABASE_ANON_KEY, APP_URL } from './config.js';
 import { STORES_SEED, ITEMS_SEED, RECIPES, RECIPE_SERVINGS_SEED, RECIPE_ITEMS_SEED, HOME_DEFAULT, PANTRY_CHECK, SOURCE_URL, TIMELINE, STORAGE } from './seed.js';
-import { neededUnits, planPortions, parseBareMinimum, buildImport, parsePrepGuide } from './planner.js';
+import { neededUnits, planPortions, parseBareMinimum, buildImport, parsePrepGuide, slug_ } from './planner.js';
 import { placeFor, useByFor, covers } from './pantry.js';
 import { NOT_FOUND_DAYS, RECEIPT_FRESH_DAYS } from './receipts.js';
 import { titleMatches_ } from './optimizer.js';
@@ -10,7 +10,7 @@ import { titleMatches_ } from './optimizer.js';
 export const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: true, detectSessionInUrl: true, flowType: 'pkce' } });
 
 export const DEFAULT_SETTINGS = {
-  homeAddress: HOME_DEFAULT, mpg: 28, gasPrice: 5.6, timeValue: 25, stopMinutes: 12, maxStores: 3,
+  audience: 'household', homeAddress: HOME_DEFAULT, mpg: 28, gasPrice: 5.6, timeValue: 5, stopMinutes: 12, maxStores: 3,
   costcoMember: false, costcoMode: 'pack', enabledStores: ['sbf', 'tj', 'tgt', 'lucky', 'raleys', 'costco'],
   householdSize: 3, nearestStores: true, serpMonthlyLimit: 230, serpLocation: '', pantry: PANTRY_CHECK, sourceUrl: SOURCE_URL
 };
@@ -18,7 +18,7 @@ export const DEFAULT_SETTINGS = {
 export const app = $state({ pantry: [],
   ready: false, session: null, user: null, household: null, error: '', toast: '',
   settings: { ...DEFAULT_SETTINGS }, stores: [], items: [], prices: {}, recipes: [], plan: { household: 3, days: [] }, purchases: [],
-  members: [], invites: [], hasSerpKey: false, hasInstacartKey: false, households: [], myInvites: [], pendingJoin: null, serpUsage: { n: 0, limit: 230 }
+  members: [], invites: [], hasSerpKey: false, hasInstacartKey: false, households: [], myInvites: [], pendingJoin: null, weeks: [], carts: [], serpUsage: { n: 0, limit: 230 }
 });
 
 /* ---------------- derived helpers ---------------- */
@@ -35,9 +35,9 @@ const daysAgo = (d) => (d ? (Date.now() - new Date(d).getTime()) / 864e5 : Infin
 /* ---------------- row ↔ app shape ---------------- */
 const toItem = (r) => ({ id: r.id, cat: r.cat, name: r.name, qty: r.qty, q: r.q, must: r.must || [], units: Number(r.units) || 1, have: !!r.have_on, haveOn: r.have_on || '' });
 const toRecipe = (r) => ({ id: r.id, title: r.title, active: r.active, servings: Number(r.servings) || 0, yield: r.yield || '', when: r.meal || '', fridge: r.fridge || '', freeze: r.freeze || '',
-  ing: r.ing || [], steps: r.steps || [], tip: r.tip || '', custom: r.custom, source: r.source || '', items: r.items || {}, createdAt: r.created_at });
+  ing: r.ing || [], steps: r.steps || [], tip: r.tip || '', custom: r.custom, source: r.source || '', cuisine: r.cuisine || '', items: r.items || {}, createdAt: r.created_at });
 const fromRecipe = (r) => ({ id: r.id, title: r.title, active: !!r.active, servings: Number(r.servings) || null, yield: r.yield || '', meal: r.when || '', fridge: r.fridge || '', freeze: r.freeze || '',
-  ing: r.ing || [], steps: r.steps || [], tip: r.tip || '', custom: !!r.custom, source: r.source || '', items: r.items || {} });
+  ing: r.ing || [], steps: r.steps || [], tip: r.tip || '', custom: !!r.custom, source: r.source || '', cuisine: r.cuisine || null, items: r.items || {} });
 function setPrice(row) {
   const e = (app.prices[row.item_id] = app.prices[row.item_id] || {});
   e[row.store_id] = { price: row.price == null ? null : Number(row.price), unitPrice: row.unit_price, unitNeeded: row.unit_needed == null ? null : Number(row.unit_needed),
@@ -126,7 +126,7 @@ async function seedHousehold() {
 }
 
 export async function loadAll() {
-  const [st, s, i, p, r, w, pu, m, inv, key, use, pan] = await Promise.all([
+  const [st, s, i, p, r, w, pu, m, inv, key, use, pan, uw, ca] = await Promise.all([
     sb.from('settings').select('data').maybeSingle(),
     sb.from('stores').select('*').order('sort'),
     sb.from('items').select('*'),
@@ -138,7 +138,9 @@ export async function loadAll() {
     sb.from('invites').select('email'),
     sb.rpc('has_serp_key'),
     sb.from('serp_usage').select('n').eq('month', new Date().toISOString().slice(0, 7)).maybeSingle(),
-    sb.from('pantry').select('*').order('added_on', { ascending: false })
+    sb.from('pantry').select('*').order('added_on', { ascending: false }),
+    sb.from('upcoming_weeks').select('start, data').order('start'),
+    sb.from('carts').select('*').eq('archived', false).order('created_at', { ascending: false })
   ]);
   for (const x of [st, s, i, p, r, w, pu]) if (x.error) fail(x.error);
   app.settings = { ...DEFAULT_SETTINGS, ...(st.data?.data || {}) };
@@ -153,17 +155,33 @@ export async function loadAll() {
   sb.rpc('has_instacart_key').then(({ data }) => (app.hasInstacartKey = !!data));
   app.serpUsage = { n: use.data?.n || 0, limit: Number(app.settings.serpMonthlyLimit) || 230 };
   app.pantry = pan.error ? [] : pan.data;
+  // trips now rank mainly on grocery cost: move the old $25/hr default for your time down to $5/hr
+  if (Number(app.settings.timeValue) === 25 && !app.settings.timeValueSet) saveSettings({ timeValue: 5 }).catch(() => {});
+  app.weeks = uw.error ? [] : uw.data.map((x) => ({ ...x.data, start: x.start }));
+  app.carts = ca.error ? [] : ca.data;
 }
 
 let channel = null, reloadTimer = null;
 function subscribe() {
   if (channel) sb.removeChannel(channel);
   channel = sb.channel('household-' + app.household);
-  ['items', 'prices', 'recipes', 'week_plan', 'purchases', 'settings', 'stores', 'pantry'].forEach((table) => {
+  ['items', 'prices', 'recipes', 'week_plan', 'purchases', 'settings', 'stores', 'pantry', 'upcoming_weeks', 'carts'].forEach((table) => {
     channel.on('postgres_changes', { event: '*', schema: 'public', table, filter: `household_id=eq.${app.household}` }, (ev) => {
       // small, frequent changes are applied directly; anything else triggers a quiet reload
       if (table === 'items' && ev.new?.id) { const k = app.items.findIndex((x) => x.id === ev.new.id); if (k >= 0) { app.items[k] = toItem(ev.new); return; } }
       if (table === 'prices' && ev.new?.item_id) { setPrice(ev.new); return; }
+      if (table === 'upcoming_weeks') {
+        if (ev.eventType === 'DELETE') { app.weeks = app.weeks.filter((x) => x.start !== ev.old?.start); return; }
+        const wk = { ...ev.new.data, start: ev.new.start }, k = app.weeks.findIndex((x) => x.start === wk.start);
+        if (k >= 0) app.weeks[k] = wk; else app.weeks = [...app.weeks, wk].sort((a, b) => a.start.localeCompare(b.start));
+        return;
+      }
+      if (table === 'carts') {
+        if (ev.eventType === 'DELETE' || ev.new?.archived) { app.carts = app.carts.filter((x) => x.id !== (ev.old?.id || ev.new?.id)); return; }
+        const k = app.carts.findIndex((x) => x.id === ev.new.id);
+        if (k >= 0) app.carts[k] = ev.new; else app.carts = [ev.new, ...app.carts];
+        return;
+      }
       if (table === 'pantry') {
         if (ev.eventType === 'DELETE') { app.pantry = app.pantry.filter((x) => x.id !== ev.old?.id); return; }
         const k = app.pantry.findIndex((x) => x.id === ev.new.id);
@@ -200,24 +218,79 @@ export async function setHave(itemIds, have, storeId, paid) {
   }
 }
 
-/* ---------------- upcoming weeks ---------------- */
-// Weeks after this one live in the plan as { start: 'YYYY-MM-DD' (a Monday), household, days, selected }.
-export async function saveWeeks(weeks) {
-  const plan = { ...app.plan, weeks };
-  app.plan = plan;
-  const { error } = await sb.from('week_plan').upsert({ household_id: app.household, data: plan, updated_at: new Date().toISOString() });
+/* ---------------- the cart: what you've put in it this trip ---------------- */
+const PACK = /^(each|pack|bag|box|can|jar|bottle|bunch|dozen|case|tray)$/;
+/** Items checked off this week, with what each cost (what you typed, else the estimate). */
+export function tripCart() {
+  const since = app.plan.weekOf || (() => { const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString().slice(0, 10); })();
+  return app.items.filter((i) => i.have).map((i) => {
+    const p = app.purchases.find((x) => x.item_id === i.id && x.day >= since && x.status !== 'Not in stock');
+    const paid = p ? (p.paid ?? p.planned) : null;
+    return { item: i, p, paid: paid == null ? null : Number(paid), edited: p?.paid != null };
+  });
+}
+/** Save what you actually bought; it also becomes that store's price for next time. */
+export async function editPurchase(p, { qty, unit, unit_price, total }) {
+  const paid = total ?? (unit_price != null ? Math.round(qty * unit_price * 100) / 100 : null);
+  const patch = { qty, unit, unit_price, paid, status: 'Bought' };
+  const { error } = await sb.from('purchases').update(patch).eq('id', p.id);
   if (error) fail(error);
+  Object.assign(p, patch);
+  app.purchases = [...app.purchases];
+  if (p.store_id && paid != null) {
+    // package units: price of one package; weight/volume: the total for this amount, plus the price per unit
+    const price = PACK.test(unit) && qty ? Math.round((paid / qty) * 100) / 100 : paid;
+    await upsertPrices([{ item_id: p.item_id, store_id: p.store_id, price, unit_price: unit_price ?? null, source: 'you', locked: false, updated_at: new Date().toISOString() }]).catch(() => {});
+  }
+}
+
+/* ---------------- project carts ---------------- */
+export async function createCart({ name, people, event_date, budget }) {
+  const row = { name: name.trim() || 'New cart', people: Number(people) || null, event_date: event_date || null, budget: budget === '' || budget == null ? null : Number(budget), recipes: [], lines: [] };
+  const { data, error } = await sb.from('carts').insert(row).select().single();
+  if (error) fail(error);
+  app.carts = [data, ...app.carts.filter((c) => c.id !== data.id)];
+  return data;
+}
+export async function saveCart(c) {
+  const { id, name, people, event_date, budget, recipes, lines } = c;
+  const { error } = await sb.from('carts').update({ name, people, event_date, budget, recipes, lines, updated_at: new Date().toISOString() }).eq('id', id);
+  if (error) fail(error);
+  const k = app.carts.findIndex((x) => x.id === id); if (k >= 0) app.carts[k] = { ...app.carts[k], ...c };
+}
+export async function archiveCart(id) {
+  const { error } = await sb.from('carts').update({ archived: true }).eq('id', id);
+  if (error) fail(error);
+  app.carts = app.carts.filter((c) => c.id !== id);
+}
+export const cheapestPrice = (id) => { const v = Object.values(app.prices[id] || {}).map((e) => e?.price).filter((x) => x > 0); return v.length ? Math.min(...v) : 0; };
+
+/* ---------------- upcoming weeks (one row each) ---------------- */
+// A week: { start: 'YYYY-MM-DD' (a Monday), household, days, selected }
+export async function saveWeek(wk) {
+  const { start, ...data } = wk;
+  const { error } = await sb.from('upcoming_weeks').upsert({ household_id: app.household, start, data: { ...data, start }, updated_at: new Date().toISOString() });
+  if (error) fail(error);
+  const k = app.weeks.findIndex((x) => x.start === start);
+  if (k >= 0) app.weeks[k] = wk; else app.weeks = [...app.weeks, wk].sort((a, b) => a.start.localeCompare(b.start));
+}
+export async function deleteWeek(start) {
+  const { error } = await sb.from('upcoming_weeks').delete().eq('start', start);
+  if (error) fail(error);
+  app.weeks = app.weeks.filter((x) => x.start !== start);
 }
 /** Make an upcoming week the current one (same as "Start the week" on the Week tab). */
 export async function startUpcoming(start) {
-  const wk = (app.plan.weeks || []).find((w) => w.start === start);
+  const wk = app.weeks.find((w) => w.start === start);
   if (!wk) return;
-  app.plan = { ...app.plan, weeks: (app.plan.weeks || []).filter((w) => w.start !== start), weekOf: start };
+  app.plan = { ...app.plan, weekOf: start };
   await savePlan({ household: wk.household, days: wk.days, selected: wk.selected || [], startNewWeek: true });
+  await deleteWeek(start);
 }
 
 export async function savePlan({ household, days, selected, startNewWeek, pantry, sourceUrl }) {
-  const plan = { ...app.plan, household: Number(household) || 3, days };
+  const { weeks: _old, ...rest } = app.plan;
+  const plan = { ...rest, household: Number(household) || 3, days };
   if (startNewWeek) { plan.prepDone = {}; plan.timers = {}; }
   const { error } = await sb.from('week_plan').upsert({ household_id: app.household, data: plan, updated_at: new Date().toISOString() });
   if (error) fail(error);
@@ -316,6 +389,32 @@ export async function importBareMinimum(slug) {
   recs.forEach((r) => { const v = toRecipe({ ...r, meal: r.meal }); const k = app.recipes.findIndex((x) => x.id === r.id); if (k >= 0) app.recipes[k] = v; else app.recipes.push(v); });
   await keepGuide(url, post.title, post.html);
   return { title: post.title, url, recipeIds: recs.map((r) => r.id), newItems: newItems.length, reused: built.items.length - newItems.length, pantry: parsed.pantry.join(', ') };
+}
+
+/** Save recipes found online (a recipe link or the recipe finder) into your library, switched off until you pick them. */
+export async function importRecipes(parsedList, prefix = 'web') {
+  const out = [];
+  for (const parsed of parsedList) {
+    const built = buildImport(parsed, app.items.map((i) => ({ id: i.id, name: i.name, qty: i.qty, units: i.units })), prefix);
+    const newItems = built.items.filter((i) => i.isNew);
+    if (newItems.length) {
+      const rows = newItems.map((it) => ({ id: it.id, cat: it.cat, name: it.name, qty: it.qty || '1', q: it.q, must: it.must, units: it.units }));
+      const { error } = await sb.from('items').upsert(rows.map((r) => ({ household_id: app.household, ...r })), { onConflict: 'household_id,id', ignoreDuplicates: true }); if (error) fail(error);
+      rows.forEach((r) => { if (!app.items.some((x) => x.id === r.id)) app.items.push(toItem(r)); });
+    }
+    const src = parsed.recipes[0];
+    const recs = built.recipes.map((r) => fromRecipe({ ...r, active: false, source: src.url || '', cuisine: src.cuisine || '' }));
+    const { error } = await sb.from('recipes').upsert(recs.map((r) => ({ household_id: app.household, ...r })));
+    if (error) fail(error);
+    recs.forEach((r) => { const v = toRecipe(r); const k = app.recipes.findIndex((x) => x.id === r.id); if (k >= 0) app.recipes[k] = v; else app.recipes.push(v); out.push(v); });
+  }
+  return out;
+}
+export async function importRecipeUrl(url) {
+  const { recipes } = await callProxy({ action: 'recipe-url', url });
+  if (!recipes?.length) throw new Error("That page doesn't share its recipe in a standard way. Try another site, or add it by hand.");
+  const { fromJsonLd } = await import('./discover.js');
+  return importRecipes(recipes.slice(0, 1).map((r) => fromJsonLd(r, url)));
 }
 
 /* ---------------- cook-day (bulk prep) guide ---------------- */
@@ -579,6 +678,20 @@ export async function invite(email) {
   app.invites = [...app.invites.filter((x) => x.email !== email.trim().toLowerCase()), { email: email.trim().toLowerCase() }];
 }
 
+/** Add grocery chains found near your address as stores (estimated prices until you have real ones). */
+export async function addLocalStores(list) {
+  const ids = [];
+  for (const b of list) {
+    let id = slug_(b.brand).slice(0, 24), k = 2; while (app.stores.some((x) => x.id === id)) id = slug_(b.brand).slice(0, 20) + '-' + k++;
+    const st = { id, name: b.brand, short: b.brand, address: b.near.label.includes(',') && !/^-?\d/.test(b.near.label) ? b.near.label : `${b.near.lat},${b.near.lng}`,
+      source: 'local', ad: `https://www.google.com/search?q=${encodeURIComponent(b.brand + ' weekly ad')}`, bulk: !!b.bulk, enabled: true, sort: 50 + app.stores.length };
+    await saveStore(st); app.stores.push(st); ids.push(id);
+  }
+  const en = Array.isArray(app.settings.enabledStores) ? app.settings.enabledStores : String(app.settings.enabledStores || '').split(',').filter(Boolean);
+  const lv = Object.fromEntries(list.map((b, i) => [ids[i], b.level]));
+  await saveSettings({ enabledStores: [...new Set([...en, ...ids])], storeLevel: { ...(app.settings.storeLevel || {}), ...lv } });
+  return ids;
+}
 export async function saveStore(s) {
   const { error } = await sb.from('stores').upsert({ household_id: app.household, id: s.id, name: s.name, short: s.short, address: s.address, source: s.source, merchant: s.serpMerchant || s.merchant || null, hours: s.hours, ad: s.ad, bulk: !!s.bulk, enabled: s.enabled !== false, sort: s.sort || 0 });
   if (error) fail(error);

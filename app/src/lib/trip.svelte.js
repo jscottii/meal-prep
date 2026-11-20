@@ -1,6 +1,6 @@
 // Trip planning: nearest stores + drive times (free maps) → optimizer → route line.
 import { app, need, toast, owned } from './db.svelte.js';
-import { nearestAndMatrix, routeLine, geocode } from './maps.js';
+import { nearestAndMatrix, routeLine, geocode, haversineMi } from './maps.js';
 import { planTrips } from './optimizer.js';
 import { scalePrices } from './planner.js';
 
@@ -34,7 +34,24 @@ export async function planTrip() {
     const start = startAddress(), home = s.homeAddress;
     const nm = await nearestAndMatrix(start, home, stores, s.nearestStores !== false, (t) => (trip.step = t));
     trip.geo = nm.start; trip.stores = nm.stores;
+    // stores more than ~35 miles from the start are from an old address — leave them out
+    const near = nm.stores.filter((st) => !st.lat || !nm.start || haversineMi(nm.start, st) <= 35);
+    if (!near.length) throw new Error('None of your stores are near this address. Open More → Stores → “Find stores near me”.');
+    if (near.length < nm.stores.length) {
+      const keep = new Set(['start', 'end', ...near.map((x) => x.id)]), idx = nm.matrix.nodes.map((id, i) => (keep.has(id) ? i : -1)).filter((i) => i >= 0);
+      nm.matrix = { nodes: idx.map((i) => nm.matrix.nodes[i]), dist: idx.map((i) => idx.map((j) => nm.matrix.dist[i][j])), dur: idx.map((i) => idx.map((j) => nm.matrix.dur[i][j])) };
+      nm.stores = near; trip.stores = near;
+    }
     const prices = scalePrices(app.prices, items, n, nm.stores, s.costcoMode);
+    // chains with no prices yet (found near a new address): estimate from what the item costs elsewhere
+    const level = s.storeLevel || {};
+    items.forEach((it) => {
+      const row = prices[it.id] = prices[it.id] || {};
+      const known = Object.entries(row).filter(([sid, e]) => e && e.price > 0 && !e.notFound && level[sid] == null).map(([, e]) => e.price).sort((a, b) => a - b);
+      if (!known.length) return;
+      const mid = known[Math.floor(known.length / 2)];
+      nm.stores.forEach((st) => { if (level[st.id] != null && !(row[st.id]?.price > 0)) row[st.id] = { price: Math.round(mid * level[st.id] * 100) / 100, source: 'estimate' }; });
+    });
     // items with no price anywhere yet: place them at a stop you're making anyway
     items.forEach((it) => {
       const row = (prices[it.id] = prices[it.id] || {});

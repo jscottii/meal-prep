@@ -78,6 +78,41 @@ export async function discoverStores(g, stores) {
   return rows.length;
 }
 
+// rough price level vs. an average supermarket, for chains we have no prices for yet
+const PRICE_LEVEL = [[/aldi|lidl|winco|grocery outlet|food 4 less|save a lot|walmart|market basket|price rite|fiesta/i, 0.85],
+  [/kroger|ralphs|fred meyer|king soopers|fry|smith|dillons|qfc|harris teeter|h-?e-?b|meijer|food lion|publix|giant|stop.?shop|hannaford|hy-?vee|winn|ingles|schnucks|jewel|acme|shoprite|wegmans|target|vons|albertsons|safeway|lucky|stater|smart ?& ?final|99 ranch|h mart/i, 1.0],
+  [/sprouts|raley|nugget|draeger|mollie|andronico|new seasons|fresh market|earth fare/i, 1.12], [/whole foods|erewhon|bristol/i, 1.25],
+  [/costco|sam'?s club|bj'?s/i, 0.8], [/trader joe/i, 0.92]];
+export const priceLevel = (name) => (PRICE_LEVEL.find(([re]) => re.test(name)) || [0, 1])[1];
+
+/** The grocery chains around an address: [{ brand, count, miles, near: {lat,lng,label}, bulk, level }] nearest first. */
+export async function findLocalChains(addr, known = []) {
+  const g = await geocode(addr);
+  const q = `[out:json][timeout:25];nwr["shop"~"^(supermarket|wholesale|grocery)$"](around:16000,${g.lat},${g.lng});out center tags;`;
+  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 45000);
+  const ask = (ep) => fetch(ep, { method: 'POST', body: 'data=' + encodeURIComponent(q), signal: ctl.signal })
+    .then((r) => r.json()).then((j) => { if (!j.elements) throw new Error(j.remark || 'no data'); return j; });
+  let j;
+  try { j = await Promise.any(['https://maps.mail.ru/osm/tools/overpass/api/interpreter', 'https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter'].map(ask)); }
+  catch (_) { throw new Error('The store map is busy right now — try again in a minute.'); }
+  finally { clearTimeout(t); ctl.abort(); }
+  const knownKeys = known.map((s) => chainKey(s.short || s.name)).filter(Boolean);
+  const by = {};
+  for (const e of j.elements || []) {
+    const tg = e.tags || {}, lat = e.lat ?? e.center?.lat, lng = e.lon ?? e.center?.lon;
+    const brand = String(tg.brand || '').trim() || (tg.shop === 'wholesale' ? String(tg.name || '').trim() : '');
+    if (lat == null || !brand || /gas|fuel|pharmacy|7-eleven|circle k|dollar|cvs|walgreens/i.test(brand)) continue;
+    const mi = haversineMi(g, { lat, lng });
+    const st1 = [String(tg['addr:housenumber'] || '').split(/[;,]/)[0], tg['addr:street']].filter(Boolean).join(' '), street = [st1, tg['addr:city']].filter(Boolean).join(', ');
+    const b = (by[brand] = by[brand] || { brand, count: 0, miles: 99, near: null });
+    b.count++;
+    if (mi < b.miles) { b.miles = Math.round(mi * 10) / 10; b.near = { lat, lng, label: street || `${lat.toFixed(4)},${lng.toFixed(4)}` }; }
+  }
+  return Object.values(by).map((b) => ({ ...b, bulk: /costco|sam'?s club|bj'?s/i.test(b.brand), level: priceLevel(b.brand),
+    known: knownKeys.some((k) => chainKey(b.brand).startsWith(k) || k.startsWith(chainKey(b.brand))) }))
+    .sort((a, b) => a.miles - b.miles).slice(0, 14);
+}
+
 /** OSRM: durations (s) and distances (m) from each source to each destination. */
 async function osrmTable(points, sources, destinations) {
   const coords = points.map((p) => `${p.lng.toFixed(6)},${p.lat.toFixed(6)}`).join(';');

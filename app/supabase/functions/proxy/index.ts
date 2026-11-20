@@ -80,6 +80,55 @@ Deno.serve(async (req) => {
       return json({ ok: true, householdDeleted });
     }
 
+    if (body.action === 'recipe-url') {
+      let u: URL;
+      try { u = new URL(String(body.url || '')); } catch { return json({ error: 'That isn’t a web link.' }, 400); }
+      if (!/^https?:$/.test(u.protocol) || /^(localhost|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|\[)/i.test(u.hostname) || !u.hostname.includes('.'))
+        return json({ error: 'That link can’t be opened.' }, 400);
+      const r = await fetch(u.href, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; WFD recipe import)', Accept: 'text/html' }, redirect: 'follow' });
+      if (!r.ok) return json({ error: `That site answered HTTP ${r.status}` }, 502);
+      const html = (await r.text()).slice(0, 3_000_000);
+      const out: any[] = [];
+      const walk = (x: any) => {
+        if (!x || typeof x !== 'object') return;
+        if (Array.isArray(x)) return x.forEach(walk);
+        const t = [].concat(x['@type'] || []).map(String);
+        if (t.includes('Recipe')) out.push(x);
+        if (x['@graph']) walk(x['@graph']);
+        if (x.mainEntity) walk(x.mainEntity);
+      };
+      for (const m of html.matchAll(/<script[^>]*application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)) {
+        try { walk(JSON.parse(m[1].trim())); } catch { /* skip bad blocks */ }
+      }
+      const keep = out.map((x) => ({ name: x.name, recipeIngredient: x.recipeIngredient, recipeInstructions: x.recipeInstructions,
+        recipeYield: x.recipeYield, recipeCategory: x.recipeCategory, recipeCuisine: x.recipeCuisine, image: x.image }));
+      return json({ url: r.url, recipes: keep });
+    }
+
+    if (body.action === 'recipe-search') {
+      // search a few big recipe sites; returns links the app can import with recipe-url
+      const q = String(body.q || '').slice(0, 80);
+      const sites: [string, string, RegExp][] = [
+        ['Allrecipes', `https://www.allrecipes.com/search?q=${encodeURIComponent(q)}`, /href="(https:\/\/www\.allrecipes\.com\/recipe\/\d+\/[^"]+)"[\s\S]{0,1500}?card__title-text[^>]*>([^<]+)</g],
+        ['Food Network', `https://www.foodnetwork.com/search/${encodeURIComponent(q.replace(/\s+/g, '-'))}-`, /href="(\/\/www\.foodnetwork\.com\/recipes\/[^"]+)"[^>]*>\s*<span[^>]*>([^<]+)</g],
+        ['Simply Recipes', `https://www.simplyrecipes.com/search?q=${encodeURIComponent(q)}`, /href="(https:\/\/www\.simplyrecipes\.com\/(?:recipes\/)?[a-z0-9-]+-\d+)"[\s\S]{0,1500}?card__title-text[^>]*>([^<]+)</g],
+      ];
+      const results: any[] = [];
+      await Promise.all(sites.map(async ([site, url, re]) => {
+        try {
+          const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36' } });
+          if (!r.ok) return;
+          const html = await r.text(), seen = new Set();
+          for (const m of html.matchAll(re)) {
+            const link = m[1].startsWith('//') ? 'https:' + m[1] : m[1];
+            if (seen.has(link) || seen.size >= 8) continue; seen.add(link);
+            results.push({ site, url: link, title: m[2].replace(/&amp;/g, '&').replace(/&#39;/g, "'").trim() });
+          }
+        } catch { /* a site being down shouldn't break the search */ }
+      }));
+      return json({ results });
+    }
+
     if (body.action === 'bm-archive') {
       const r = await fetch(`${BM}/api/v1/archive?sort=new&limit=30`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
       if (!r.ok) return json({ error: `the bare minimum answered HTTP ${r.status}` }, 502);

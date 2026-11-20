@@ -1,6 +1,7 @@
 <script>
   import InstallApp from '../components/InstallApp.svelte';
-  import { app, saveSettings, saveSerpKey, testSerpKey, saveInstacartKey, MAX_HOUSEHOLDS, switchHousehold, createHousehold, acceptInvite, declineInvite, leaveHousehold, renameHousehold, currentHousehold, getJoinCode, resetJoinCode, peekCode, joinWithCode, showCode, inviteLink, invite, signOut, deleteAccount, saveStore, toast } from '../lib/db.svelte.js';
+  import { app, saveSettings, saveSerpKey, testSerpKey, saveInstacartKey, MAX_HOUSEHOLDS, switchHousehold, createHousehold, acceptInvite, declineInvite, leaveHousehold, renameHousehold, currentHousehold, getJoinCode, resetJoinCode, peekCode, joinWithCode, showCode, inviteLink, invite, signOut, deleteAccount, saveStore, addLocalStores, toast } from '../lib/db.svelte.js';
+  import { findLocalChains } from '../lib/maps.js';
   import { trip } from '../lib/trip.svelte.js';
   let { go } = $props();
   let icKey = $state('');
@@ -34,11 +35,26 @@
   });
   const fmt = (x) => (x == null ? '—' : '$' + Number(x).toFixed(2));
 
+  let local = $state(null), localPick = $state({}), localBusy = $state(''), localErr = $state('');
+  async function findLocal() {
+    localBusy = 'find'; localErr = '';
+    try { local = await findLocalChains(app.settings.homeAddress, app.stores); localPick = Object.fromEntries(local.filter((b) => !b.known).slice(0, 5).map((b) => [b.brand, true])); if (!local.length) localErr = 'No grocery stores found within 10 miles of your home address.'; }
+    catch (e) { localErr = e.message; }
+    localBusy = '';
+  }
+  async function addLocal() {
+    localBusy = 'add'; localErr = '';
+    try { const ids = await addLocalStores(local.filter((b) => localPick[b.brand] && !b.known)); trip.result = null; toast(`✓ Added ${ids.length} store${ids.length === 1 ? '' : 's'}`); local = local.map((b) => (localPick[b.brand] ? { ...b, known: true } : b)); }
+    catch (e) { localErr = e.message; }
+    localBusy = '';
+  }
   async function save() {
+    const moved = s.homeAddress !== app.settings.homeAddress;
     saving = true;
-    try { await saveSettings({ homeAddress: s.homeAddress, mpg: +s.mpg, gasPrice: +s.gasPrice, timeValue: +s.timeValue, stopMinutes: +s.stopMinutes, maxStores: +s.maxStores,
-      costcoMember: !!s.costcoMember, costcoMode: s.costcoMode, householdSize: +s.householdSize, nearestStores: !!s.nearestStores, serpMonthlyLimit: +s.serpMonthlyLimit });
-      trip.result = null; toast('✓ Settings saved'); }
+    try { await saveSettings({ homeAddress: s.homeAddress, mpg: +s.mpg, gasPrice: +s.gasPrice, timeValue: +s.timeValue, timeValueSet: !!s.timeValueSet, stopMinutes: +s.stopMinutes, maxStores: +s.maxStores,
+      costcoMember: !!s.costcoMember, costcoMode: s.costcoMode, householdSize: +s.householdSize, audience: s.audience || 'household', nearestStores: !!s.nearestStores, serpMonthlyLimit: +s.serpMonthlyLimit });
+      trip.result = null; toast('✓ Settings saved');
+      if (moved) { tab = 'stores'; findLocal(); } }
     catch (e) { toast(e.message); }
     saving = false;
   }
@@ -76,12 +92,28 @@
     <h1>Stores</h1>
     <p class="muted small">{app.settings.nearestStores !== false ? 'Each chain uses its location nearest to where your trip starts.' : 'Using the addresses below.'} Turn a store off to leave it out of trips.</p>
     <div class="card">
+      <div class="spread"><b>Stores near {app.settings.homeAddress.split(',')[0]}</b><button class="ghost" onclick={findLocal} disabled={!!localBusy}>{#if localBusy === 'find'}<span class="spinner"></span>{/if} Find stores near me</button></div>
+      <p class="small muted" style="margin:4px 0">Moved, or not in the Bay Area? This finds the grocery chains around your home address (change it in Settings).</p>
+      {#if localErr}<div class="err">⚠️ {localErr}</div>{/if}
+      {#if local}
+        {#each local as b (b.brand)}
+          <label class="list-row" style="cursor:pointer">
+            <input type="checkbox" style="width:auto" disabled={b.known} checked={b.known || !!localPick[b.brand]} onchange={(e) => (localPick[b.brand] = e.currentTarget.checked)} />
+            <div class="grow"><b>{b.brand}</b>{#if b.bulk} <span class="pill acc">membership</span>{/if}{#if b.known} <span class="pill live">in your stores</span>{/if}
+              <div class="small muted">{b.miles} mi · {b.near.label}{b.count > 1 ? ` · ${b.count} nearby` : ''} · prices {b.level < 0.95 ? 'lower' : b.level > 1.05 ? 'higher' : 'average'}</div></div>
+          </label>
+        {/each}
+        <button onclick={addLocal} disabled={!!localBusy || !local.some((b) => localPick[b.brand] && !b.known)}>{#if localBusy === 'add'}<span class="spinner"></span>{/if} Add selected stores</button>
+        <p class="small muted">New stores start with estimated prices (from what items cost elsewhere and the chain's usual price level). Scanning a receipt or a live price check replaces the estimates. Stores more than 35 miles from where a trip starts are left out automatically.</p>
+      {/if}
+    </div>
+    <div class="card">
       {#each app.stores as st}
         {@const loc = trip.stores.find((x) => x.id === st.id)}
         <div class="list-row">
           <div class="grow"><b>{st.short}</b>{#if st.bulk} <span class="pill acc">membership</span>{/if}
             <div class="small muted">{loc?.label || st.address}{loc?.fromStart ? ` · ${loc.fromStart.minutes} min · ${loc.fromStart.miles} mi` : ''}{loc && !loc.home ? ' · nearest' : ''}</div>
-            <div class="small"><a href={st.ad} target="_blank" rel="noopener">Weekly ad ↗</a> · {st.source === 'serpapi' || st.source === 'target' ? 'live prices (SerpApi)' : 'prices from receipts'}</div></div>
+            <div class="small"><a href={st.ad} target="_blank" rel="noopener">Weekly ad ↗</a> · {st.source === 'serpapi' || st.source === 'target' ? 'live prices (SerpApi)' : st.source === 'local' ? 'estimated prices until a receipt' : 'prices from receipts'}</div></div>
           <label class="switch"><input type="checkbox" checked={st.enabled !== false} onchange={() => toggleStore(st)} /><span></span></label>
         </div>
       {/each}
@@ -91,17 +123,23 @@
     <h1>Settings</h1>
     <InstallApp />
     <div class="card">
+      <label class="f">Who you cook for<select bind:value={s.audience}><option value="household">My household — keep it simple</option><option value="group">A big group (10+) — show me the details</option></select></label>
       <label class="f">Home address (trips end here)<input bind:value={s.homeAddress} /></label>
       <div class="grid2">
         <label class="f">Usually feeding (people)<input type="number" min="1" bind:value={s.householdSize} /></label>
+        <label class="f">Costco<select bind:value={s.costcoMember}><option value={false}>Not a member</option><option value={true}>Member</option></select></label>
+      </div>
+      <details open={s.audience === 'group'}>
+      <summary class="small" style="margin:6px 0">Trip details (stops, gas, time)</summary>
+      <div class="grid2">
         <label class="f">Most stops per trip<input type="number" min="1" max="6" bind:value={s.maxStores} /></label>
         <label class="f">Car MPG<input type="number" bind:value={s.mpg} /></label>
         <label class="f">Gas $/gallon<input type="number" step="0.01" bind:value={s.gasPrice} /></label>
-        <label class="f">Your time ($/hour)<input type="number" bind:value={s.timeValue} /></label>
+        <label class="f">Value of your time ($/hour) <span class="small muted">— keep low to choose by grocery price</span><input type="number" bind:value={s.timeValue} oninput={() => (s.timeValueSet = true)} /></label>
         <label class="f">Minutes per stop<input type="number" bind:value={s.stopMinutes} /></label>
         <label class="f">Store locations<select bind:value={s.nearestStores}><option value={true}>Nearest to where I start</option><option value={false}>Always the saved addresses</option></select></label>
-        <label class="f">Costco<select bind:value={s.costcoMember}><option value={false}>Not a member</option><option value={true}>Member</option></select></label>
       </div>
+      </details>
       <button onclick={save} disabled={saving}>{#if saving}<span class="spinner"></span>{/if} Save settings</button>
     </div>
 
