@@ -126,5 +126,5 @@
       {/if}
     </div>
   {/if}
-  <p class="small muted" style="text-align:center;margin-top:20px"><a href="https://jscottii.github.io/meal-prep/privacy.html" target="_blank" rel="noopener">Privacy policy</a> · <a href="https://jscottii.github.io/meal-prep/support.html" target="_blank" rel="noopener">Help &amp; support</a></p>
+  <p class="small muted" style="text-align:center;margin-top:20px"><a href="https://jscottii.github.io/wfd/privacy.html" target="_blank" rel="noopener">Privacy policy</a> · <a href="https://jscottii.github.io/wfd/support.html" target="_blank" rel="noopener">Help &amp; support</a></p>
 </div>

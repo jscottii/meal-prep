@@ -37,7 +37,7 @@
     {:else}<Trip {go} />{/if}
   {/key}
   <nav class="tabs">
-    <div class="brand">🛒 Meal Prep Shopper</div>
+    <div class="brand"><img src="icon.svg" alt="" width="26" height="26" style="vertical-align:-7px;margin-right:8px;border-radius:6px" />What's for Dinner</div>
     {#each TABS as [k, ic, label]}<button class:on={page === k} onclick={() => go(k)}><span class="ic">{ic}</span>{label}</button>{/each}
   </nav>
 {/if}

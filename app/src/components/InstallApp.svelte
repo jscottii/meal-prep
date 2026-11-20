@@ -4,7 +4,7 @@
   let { compact = false } = $props();
   const kind = browserKind();
   let open = $state(!compact);
-  async function go() { if (await promptInstall()) toast('✓ Installed — look for Meal Prep on your home screen'); }
+  async function go() { if (await promptInstall()) toast('✓ Installed — look for WFD on your home screen'); }
   async function copy() { try { await navigator.clipboard.writeText(location.origin + location.pathname); toast('✓ Link copied — paste it into Safari'); } catch { toast(location.origin + location.pathname); } }
 </script>
 

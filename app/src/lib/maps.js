@@ -4,7 +4,7 @@
 //   OSRM                       drive-time matrix + route line, one request each
 import { sb } from './db.svelte.js';
 
-const UA_EMAIL = 'meal-prep app';
+const UA_EMAIL = 'WFD app';
 const cache = (k, v) => { try { if (v === undefined) return JSON.parse(localStorage.getItem(k) || 'null'); localStorage.setItem(k, JSON.stringify(v)); } catch (_) { return null; } };
 
 export function haversineMi(a, b) {

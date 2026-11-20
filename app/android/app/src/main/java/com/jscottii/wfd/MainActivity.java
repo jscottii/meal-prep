@@ -1,4 +1,4 @@
-package com.jscottii.mealprep;
+package com.jscottii.wfd;
 
 import com.getcapacitor.BridgeActivity;
 

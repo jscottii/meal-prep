@@ -1,5 +1,5 @@
 {
-  "name": "mealprep-app",
+  "name": "wfd-app",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "build:native": "vite build --mode native",
     "cap:sync": "npm run build:native && cap sync",
-    "cap:assets": "capacitor-assets generate --ios --android --iconBackgroundColor '#b5541c' --splashBackgroundColor '#f7f3ec'"
+    "cap:assets": "capacitor-assets generate --ios --android --iconBackgroundColor '#1f5fd1' --splashBackgroundColor '#f7f3ec'"
   },
   "devDependencies": {
     "@capacitor/android": "^8.6.2",

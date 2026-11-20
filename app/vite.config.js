@@ -4,7 +4,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 // `vite build --mode native` makes the copy that ships inside the iPhone/Android app (no service worker, relative paths)
 export default defineConfig(({ mode }) => ({
-  base: mode === 'native' ? './' : '/meal-prep/',
+  base: mode === 'native' ? './' : '/wfd/',
   build: mode === 'native' ? { outDir: 'dist-native' } : {},
   define: { __NATIVE__: JSON.stringify(mode === 'native') },
   plugins: [
@@ -13,8 +13,8 @@ export default defineConfig(({ mode }) => ({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg', 'apple-touch-icon.png'],
       manifest: {
-        name: 'Meal Prep Shopper', short_name: 'Meal Prep', description: 'Plan the week, shop it in the fewest, cheapest stops.',
-        theme_color: '#b5541c', background_color: '#f7f3ec', display: 'standalone', start_url: '/meal-prep/', scope: '/meal-prep/',
+        name: "WFD — What's for Dinner", short_name: 'WFD', description: 'Plan the week, shop it in the fewest, cheapest stops, and cook it all at once.',
+        theme_color: '#1f5fd1', background_color: '#f7f3ec', display: 'standalone', start_url: '/wfd/', scope: '/wfd/',
         icons: [
           { src: 'pwa-192.png', sizes: '192x192', type: 'image/png' },
           { src: 'pwa-512.png', sizes: '512x512', type: 'image/png' },
@@ -24,7 +24,7 @@ export default defineConfig(({ mode }) => ({
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png}'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
-        navigateFallback: '/meal-prep/index.html',
+        navigateFallback: '/wfd/index.html',
         runtimeCaching: [{ urlPattern: /^https:\/\/[abc]\.tile\.openstreetmap\.org\//, handler: 'CacheFirst', options: { cacheName: 'map-tiles', expiration: { maxEntries: 400, maxAgeSeconds: 30 * 864e2 } } }]
       }
     })

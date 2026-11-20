@@ -25,9 +25,9 @@
 </script>
 
 <div class="page" style="max-width:420px;padding-top:12vh">
-  <div style="font-size:44px">🛒</div>
-  <h1>Meal Prep Shopper</h1>
-  <p class="muted">Cook once, eat all week — and shop it in the fewest, cheapest stops.</p>
+  <img src="icon.svg" alt="" width="64" height="64" style="border-radius:14px" />
+  <h1>What's for Dinner</h1>
+  <p class="muted">Plan the week, shop it in the fewest, cheapest stops, and cook it all at once.</p>
   {#if mode === 'reset'}
     <h2 style="margin-top:14px">Reset your password</h2>
     {#if !sent}
