@@ -5,6 +5,8 @@
 //   serp-search {q, location}  one Google Shopping search (counts toward the monthly cap)
 //   serp-location {city, state} SerpApi's canonical location name
 //   instacart-list {title, items:[{name, quantity, unit, display}]}  an Instacart shopping-list page (pick Costco, Safeway, … there)
+//   serp-walmart-cart {items:[{name,count}]}  Walmart add-to-cart link (one SerpApi search per item)
+//   instacart-retailers {postal_code}  Instacart stores near a ZIP
 //   delete-account {confirm:'DELETE'}  delete your sign-in; the household's data too if you're its last member
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
@@ -101,7 +103,7 @@ Deno.serve(async (req) => {
         try { walk(JSON.parse(m[1].trim())); } catch { /* skip bad blocks */ }
       }
       const keep = out.map((x) => ({ name: x.name, recipeIngredient: x.recipeIngredient, recipeInstructions: x.recipeInstructions,
-        recipeYield: x.recipeYield, recipeCategory: x.recipeCategory, recipeCuisine: x.recipeCuisine, image: x.image }));
+        recipeYield: x.recipeYield, recipeCategory: x.recipeCategory, recipeCuisine: x.recipeCuisine, image: x.image, nutrition: x.nutrition ? { calories: x.nutrition.calories } : null }));
       return json({ url: r.url, recipes: keep });
     }
 
@@ -184,6 +186,47 @@ Deno.serve(async (req) => {
         }));
         return json({ results, used: n + 1, limit });
       }
+
+      if (body.action === 'serp-walmart-cart') {
+        // look up each item's Walmart product number, then build Walmart's add-to-cart link
+        const items = (Array.isArray(body.items) ? body.items : []).filter((x: any) => x && x.name).slice(0, 40);
+        const month = new Date().toISOString().slice(0, 7);
+        const { data: st } = await admin.from('settings').select('data').eq('household_id', hid).maybeSingle();
+        const limit = Number(st?.data?.serpMonthlyLimit) || 230;
+        const { data: use } = await admin.from('serp_usage').select('n').eq('household_id', hid).eq('month', month).maybeSingle();
+        let n = use?.n || 0;
+        if (n + items.length > limit) return json({ error: `That needs ${items.length} SerpApi searches and only ${Math.max(0, limit - n)} are left this month.`, budget: true }, 429);
+        const found: any[] = [], missing: string[] = [];
+        await Promise.all(items.map(async (x: any) => {
+          try {
+            const r = await fetch(`https://serpapi.com/search.json?engine=walmart&query=${encodeURIComponent(x.name)}&api_key=${encodeURIComponent(key)}`);
+            const j = await r.json(); n++;
+            const hit = (j.organic_results || []).find((o: any) => o.us_item_id || o.product_id);
+            if (hit) found.push({ name: x.name, id: String(hit.us_item_id || hit.product_id), qty: Math.max(1, Math.round(Number(x.count) || 1)), title: hit.title, price: hit.primary_offer?.offer_price ?? null });
+            else missing.push(x.name);
+          } catch { missing.push(x.name); }
+        }));
+        await admin.from('serp_usage').upsert({ household_id: hid, month, n });
+        if (!found.length) return json({ error: 'Walmart didn’t find those items.' }, 404);
+        const url = 'https://affil.walmart.com/cart/addToCart?items=' + found.map((f) => `${f.id}|${f.qty}`).join(',');
+        return json({ url, found, missing, used: n, limit });
+      }
+    }
+
+    if (body.action === 'instacart-retailers') {
+      // stores near a ZIP code on Instacart, so the list can open straight at Costco, Safeway, …
+      const { data: sec } = await admin.from('household_secrets').select('instacart_key').eq('household_id', hid).maybeSingle();
+      const key = sec?.instacart_key || Deno.env.get('INSTACART_API_KEY');
+      if (!key) return json({ error: 'Add your Instacart key first.' }, 400);
+      const zip = String(body.postal_code || '').replace(/[^0-9A-Za-z ]/g, '').slice(0, 10);
+      for (const base of ['https://connect.instacart.com', 'https://connect.dev.instacart.tools']) {
+        const r = await fetch(`${base}/idp/v1/retailers?postal_code=${encodeURIComponent(zip)}&country_code=${body.country || 'US'}`, { headers: { Authorization: 'Bearer ' + key, Accept: 'application/json' } });
+        if (r.status === 401 || r.status === 403) continue;
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) return json({ error: j?.errors?.[0]?.message || `Instacart said ${r.status}` }, 502);
+        return json({ retailers: (j.retailers || []).map((x: any) => ({ key: x.retailer_key, name: x.name, logo: x.retailer_logo_url })) });
+      }
+      return json({ error: "Instacart didn't accept that key for store lookups." }, 400);
     }
     return json({ error: 'Unknown action' }, 400);
   } catch (e) {

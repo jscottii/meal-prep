@@ -2,7 +2,7 @@
   import { app, need, itemById, saveReceipt, toast } from '../lib/db.svelte.js';
   import { parseReceiptText, matchReceipt } from '../lib/receipts.js';
   import { trip } from '../lib/trip.svelte.js';
-  let { go } = $props();
+  let { go, onclose = null } = $props();
 
   let storeId = $state(''), file = $state(null), preview = $state(''), step = $state(''), pct = $state(0), rows = $state(null), err = $state(''), text = $state(''), date = $state(new Date().toISOString().slice(0, 10)), saving = $state(false), done = $state(null);
   let n = $derived(need());
@@ -57,12 +57,13 @@
   }
 </script>
 
-<div class="page">
-  <h1>After shopping</h1>
+<div>
+  <h2 style="margin-top:0">🧾 Done shopping? Check your receipt</h2>
+  <p class="small muted" style="margin-top:0">Snap the receipt and the app saves what you really paid, so next week’s trip and prices are more accurate. Optional.</p>
   <p class="muted">Snap your receipt. The app reads it right on your phone, checks each price against what it planned, and notes anything the store didn't have.</p>
   {#if err}<div class="err">⚠️ {err}</div>{/if}
   {#if done}
-    <div class="ok">✓ {done.bought} items marked bought with their real prices{done.saved - done.bought ? `, ${done.saved - done.bought} marked not found (skipped at this store for 30 days)` : ''}. <a href="#trip" onclick={(e) => { e.preventDefault(); trip.result = null; go('trip'); }}>Back to the trip</a></div>
+    <div class="ok">✓ {done.bought} items marked bought with their real prices{done.saved - done.bought ? `, ${done.saved - done.bought} marked not found (skipped at this store for 30 days)` : ''}. <button class="quiet" onclick={() => { trip.result = null; onclose ? onclose() : go('trip'); }}>Close</button></div>
   {/if}
   <div class="card">
     <div class="grid2">

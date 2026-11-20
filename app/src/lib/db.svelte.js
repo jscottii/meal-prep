@@ -10,7 +10,7 @@ import { titleMatches_ } from './optimizer.js';
 export const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: true, detectSessionInUrl: true, flowType: 'pkce' } });
 
 export const DEFAULT_SETTINGS = {
-  audience: 'household', homeAddress: HOME_DEFAULT, mpg: 28, gasPrice: 5.6, timeValue: 5, stopMinutes: 12, maxStores: 3,
+  audience: 'household', units: 'imperial', homeAddress: HOME_DEFAULT, mpg: 28, gasPrice: 5.6, timeValue: 5, stopMinutes: 12, maxStores: 3,
   costcoMember: false, costcoMode: 'pack', enabledStores: ['sbf', 'tj', 'tgt', 'lucky', 'raleys', 'costco'],
   householdSize: 3, nearestStores: true, serpMonthlyLimit: 230, serpLocation: '', pantry: PANTRY_CHECK, sourceUrl: SOURCE_URL
 };
@@ -35,9 +35,9 @@ const daysAgo = (d) => (d ? (Date.now() - new Date(d).getTime()) / 864e5 : Infin
 /* ---------------- row ↔ app shape ---------------- */
 const toItem = (r) => ({ id: r.id, cat: r.cat, name: r.name, qty: r.qty, q: r.q, must: r.must || [], units: Number(r.units) || 1, have: !!r.have_on, haveOn: r.have_on || '' });
 const toRecipe = (r) => ({ id: r.id, title: r.title, active: r.active, servings: Number(r.servings) || 0, yield: r.yield || '', when: r.meal || '', fridge: r.fridge || '', freeze: r.freeze || '',
-  ing: r.ing || [], steps: r.steps || [], tip: r.tip || '', custom: r.custom, source: r.source || '', cuisine: r.cuisine || '', items: r.items || {}, createdAt: r.created_at });
+  ing: r.ing || [], steps: r.steps || [], tip: r.tip || '', custom: r.custom, source: r.source || '', cuisine: r.cuisine || '', calories: Number(r.calories) || 0, items: r.items || {}, createdAt: r.created_at });
 const fromRecipe = (r) => ({ id: r.id, title: r.title, active: !!r.active, servings: Number(r.servings) || null, yield: r.yield || '', meal: r.when || '', fridge: r.fridge || '', freeze: r.freeze || '',
-  ing: r.ing || [], steps: r.steps || [], tip: r.tip || '', custom: !!r.custom, source: r.source || '', cuisine: r.cuisine || null, items: r.items || {} });
+  ing: r.ing || [], steps: r.steps || [], tip: r.tip || '', custom: !!r.custom, source: r.source || '', cuisine: r.cuisine || null, calories: Number(r.calories) || null, items: r.items || {} });
 function setPrice(row) {
   const e = (app.prices[row.item_id] = app.prices[row.item_id] || {});
   e[row.store_id] = { price: row.price == null ? null : Number(row.price), unitPrice: row.unit_price, unitNeeded: row.unit_needed == null ? null : Number(row.unit_needed),
@@ -214,6 +214,7 @@ export async function setHave(itemIds, have, storeId, paid) {
     const st = storeById(storeId);
     const rows = itemIds.map((id) => ({ day, store_id: storeId, store: st?.short, item_id: id, item: itemById(id)?.name, planned: paid?.[id] ?? null, status: 'Checked off' }));
     const { data, error: e2 } = await sb.from('purchases').insert(rows).select();
+    if (e2) toast('Couldn’t record the price: ' + e2.message);
     if (!e2 && data) app.purchases = [...data, ...app.purchases];
   }
 }
@@ -222,19 +223,27 @@ export async function setHave(itemIds, have, storeId, paid) {
 const PACK = /^(each|pack|bag|box|can|jar|bottle|bunch|dozen|case|tray)$/;
 /** Items checked off this week, with what each cost (what you typed, else the estimate). */
 export function tripCart() {
-  const since = app.plan.weekOf || (() => { const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString().slice(0, 10); })();
+  const wk = app.plan.weekOf || '9999';
+  const back = (() => { const d = new Date(); d.setDate(d.getDate() - 10); return d.toISOString().slice(0, 10); })();
+  const since = wk < back ? wk : back;   // a week started early has a "week of" in the future — don't let that hide this trip
   return app.items.filter((i) => i.have).map((i) => {
-    const p = app.purchases.find((x) => x.item_id === i.id && x.day >= since && x.status !== 'Not in stock');
+    const p = app.purchases.filter((x) => x.item_id === i.id && x.day >= (i.haveOn && i.haveOn < since ? i.haveOn : since) && x.status !== 'Not in stock').sort((a, b) => String(b.day).localeCompare(String(a.day)) || (b.id || 0) - (a.id || 0))[0];
     const paid = p ? (p.paid ?? p.planned) : null;
     return { item: i, p, paid: paid == null ? null : Number(paid), edited: p?.paid != null };
   });
 }
-/** Save what you actually bought; it also becomes that store's price for next time. */
-export async function editPurchase(p, { qty, unit, unit_price, total }) {
+export async function editPurchase(p, { qty, unit, unit_price, total }, item = null, storeId = null) {
   const paid = total ?? (unit_price != null ? Math.round(qty * unit_price * 100) / 100 : null);
   const patch = { qty, unit, unit_price, paid, status: 'Bought' };
-  const { error } = await sb.from('purchases').update(patch).eq('id', p.id);
-  if (error) fail(error);
+  if (!p) {   // checked off before purchases were recorded: make the record now
+    const st = storeId ? storeById(storeId) : null;
+    const { data, error } = await sb.from('purchases').insert({ day: today(), store_id: storeId, store: st?.short || null, item_id: item.id, item: item.name, ...patch }).select().single();
+    if (error) fail(error);
+    app.purchases = [data, ...app.purchases]; p = data;
+  } else {
+    const { error } = await sb.from('purchases').update(patch).eq('id', p.id);
+    if (error) fail(error);
+  }
   Object.assign(p, patch);
   app.purchases = [...app.purchases];
   if (p.store_id && paid != null) {
@@ -288,9 +297,9 @@ export async function startUpcoming(start) {
   await deleteWeek(start);
 }
 
-export async function savePlan({ household, days, selected, startNewWeek, pantry, sourceUrl }) {
+export async function savePlan({ household, shape, days, selected, startNewWeek, pantry, sourceUrl }) {
   const { weeks: _old, ...rest } = app.plan;
-  const plan = { ...rest, household: Number(household) || 3, days };
+  const plan = { ...rest, household: Number(household) || 3, days, ...(shape ? { shape } : {}) };
   if (startNewWeek) { plan.prepDone = {}; plan.timers = {}; }
   const { error } = await sb.from('week_plan').upsert({ household_id: app.household, data: plan, updated_at: new Date().toISOString() });
   if (error) fail(error);
@@ -403,7 +412,7 @@ export async function importRecipes(parsedList, prefix = 'web') {
       rows.forEach((r) => { if (!app.items.some((x) => x.id === r.id)) app.items.push(toItem(r)); });
     }
     const src = parsed.recipes[0];
-    const recs = built.recipes.map((r) => fromRecipe({ ...r, active: false, source: src.url || '', cuisine: src.cuisine || '' }));
+    const recs = built.recipes.map((r) => fromRecipe({ ...r, active: false, source: src.url || '', cuisine: src.cuisine || '', calories: src.calories || null }));
     const { error } = await sb.from('recipes').upsert(recs.map((r) => ({ household_id: app.household, ...r })));
     if (error) fail(error);
     recs.forEach((r) => { const v = toRecipe(r); const k = app.recipes.findIndex((x) => x.id === r.id); if (k >= 0) app.recipes[k] = v; else app.recipes.push(v); out.push(v); });

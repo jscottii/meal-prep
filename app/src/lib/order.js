@@ -27,7 +27,8 @@ const open = (url) => window.open(url, '_blank', 'noopener');
 export async function orderInstacart(title, lines) {
   const r = await callProxy({ action: 'instacart-list', title, items: lines.map((l) => ({ name: l.search, quantity: l.count, unit: 'each', display: `${l.name}${l.qty ? ' — ' + l.qty : ''}` })) });
   if (!r?.url) throw new Error(r?.error || "Instacart didn't return a link.");
-  open(r.url);
+  const store = app.settings.instacartStore;   // open straight at your usual store (Costco same-day, Safeway…)
+  open(store?.key ? r.url + (r.url.includes('?') ? '&' : '?') + 'retailer_key=' + encodeURIComponent(store.key) : r.url);
   return r;
 }
 
@@ -40,6 +41,14 @@ export function orderAmazon(lines) {
   i.type = 'hidden'; i.name = 'ingredients'; i.value = JSON.stringify({ ingredients });
   f.appendChild(i); document.body.appendChild(f); f.submit(); f.remove();
 }
+
+/** Walmart: look up each item's product number, then open Walmart with them already in the cart (sign in there to check out). */
+export async function orderWalmart(lines) {
+  const r = await callProxy({ action: 'serp-walmart-cart', items: lines.map((l) => ({ name: l.search, count: l.count })) });
+  open(r.url);
+  return r;
+}
+export async function instacartStores(zip) { return (await callProxy({ action: 'instacart-retailers', postal_code: zip })).retailers || []; }
 
 /** Walmart and Safeway have no way for other apps to fill a cart: copy the list, then open the store. */
 export async function copyAndOpen(title, lines, url) {

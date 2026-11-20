@@ -2,12 +2,13 @@
   import { app, saveSettings, itemById, recipeById, savePlan, listBareMinimum, importBareMinimum, toast, owned } from '../lib/db.svelte.js';
   import { rankByPantry, daysLeft } from '../lib/pantry.js';
   import Weeks from './Weeks.svelte';
+  import Calendar from '../components/Calendar.svelte';
+  import { ui } from '../lib/ui.svelte.js';
   import FindRecipes from '../components/FindRecipes.svelte';
   let finding = $state(false);
   import { trip, planTrip } from '../lib/trip.svelte.js';
   let { go } = $props();
-  let view = $state(localStorage.getItem('mp-week-view') || 'this');
-  $effect(() => { localStorage.setItem('mp-week-view', view); });
+  let focusWeek = $state('');   // a future week opened from the calendar
 
   const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   const SLOTS = ['breakfast', 'lunch', 'dinner', 'snack'];
@@ -15,18 +16,33 @@
   const short = (r) => (r ? String(r.title).replace(/\s*\(.*?\)\s*/g, ' ').replace(/\s+with .*$/i, '').trim() : '');
   const weekOf = (r) => { const m = String(r.id).match(/^bm(\d\d)(\d\d)-/); return m ? `${['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][+m[1]]} ${+m[2]} week` : r.custom ? 'yours' : 'Thanksgiving week'; };
 
+  // the plan in one sentence: "Prep 2 meals for 5 people, Mon–Fri" (+ snack)
+  const DEFAULT_MEALS = { 1: ['dinner'], 2: ['lunch', 'dinner'], 3: ['breakfast', 'lunch', 'dinner'] };
+  let shape = $state({ meals: ['lunch', 'dinner'], snack: false, from: 0, to: 4, ...(app.plan.shape || app.settings.planShape || {}) });
   function autoFill(recipes, household) {
     household = Math.max(1, Number(household) || 1);
+    const on = new Set([...shape.meals, ...(shape.snack ? ['snack'] : [])]);
     const all = DAYS.map((d) => ({ day: d, people: household, breakfast: '', lunch: '', dinner: '', snack: '' }));
-    const grid = all.slice(0, 5), g = { breakfast: [], snack: [], main: [] };
+    const grid = all.slice(shape.from, shape.to + 1), g = { breakfast: [], snack: [], main: [] };
     recipes.forEach((r) => g[kind(r)].push(r));
-    ['breakfast', 'snack'].forEach((k) => g[k].length && grid.forEach((d, i) => (d[k] = g[k][i % g[k].length].id)));
+    ['breakfast', 'snack'].forEach((k) => on.has(k) && g[k].length && grid.forEach((d, i) => (d[k] = g[k][i % g[k].length].id)));
     const q = g.main.map((r) => ({ id: r.id, left: Math.max(1, Math.round((Number(r.servings) || household) / household)) }));
-    const slots = [...grid.map((d) => [d, 'dinner']), ...grid.map((d) => [d, 'lunch'])];
+    const slots = [...(on.has('dinner') ? grid.map((d) => [d, 'dinner']) : []), ...(on.has('lunch') ? grid.map((d) => [d, 'lunch']) : [])];
     let qi = 0;
     slots.forEach((sl) => { for (let t = 0; t < q.length; t++) { const x = q[qi++ % q.length]; if (x.left > 0) { sl[0][sl[1]] = x.id; x.left--; return; } } });
+    if (!on.has('breakfast')) grid.forEach((d) => (d.breakfast = ''));
     return all;
   }
+  function reshape(patch) {
+    Object.assign(shape, patch);
+    if (shape.to < shape.from) shape.to = shape.from;
+    days = autoFill(picked, household);
+  }
+  function setMealCount(n) { reshape({ meals: DEFAULT_MEALS[n] }); }
+  function toggleMeal(m) { const has = shape.meals.includes(m); if (has && shape.meals.length === 1) return; reshape({ meals: has ? shape.meals.filter((x) => x !== m) : ['breakfast', 'lunch', 'dinner'].filter((x) => x === m || shape.meals.includes(x)) }); }
+  const D3 = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  let goalOn = $state(!!app.settings.calorieGoal), goal = $state(app.settings.calorieGoal || 600);
+  const cal = (r) => Number(r.calories) || 0;
 
   // working copy of the plan
   const onPlan = new Set(); (app.plan.days || []).forEach((d) => SLOTS.forEach((s) => d[s] && onPlan.add(d[s])));
@@ -74,7 +90,7 @@
     if (!picked.length) { err = 'Pick at least one recipe.'; return; }
     saving = true; err = '';
     try {
-      await savePlan({ household, days: $state.snapshot(days), selected: Object.keys(sel), startNewWeek: startNew, pantry, sourceUrl });
+      await savePlan({ household, shape: $state.snapshot(shape), days: $state.snapshot(days), selected: Object.keys(sel), startNewWeek: startNew, pantry, sourceUrl });
       trip.result = null;
       if (startNew) { go('trip'); planTrip(); } else toast('✓ Plan saved');
     } catch (e) { err = e.message; }
@@ -84,23 +100,18 @@
 </script>
 
 <div class="page">
-  {#if !app.settings.audienceAsked}
-    <div class="card">
-      <h3 style="margin-top:0">Who are you cooking for?</h3>
-      <div class="row">
-        <button onclick={() => saveSettings({ audience: 'household', audienceAsked: true })}>🏠 My household</button>
-        <button class="ghost" onclick={() => saveSettings({ audience: 'group', audienceAsked: true })}>👥 A big group (10+)</button>
-      </div>
-      <p class="small muted" style="margin-bottom:0">Big-group mode shows portions, scaling and cost per person. Change it anytime in More → Settings.</p>
+  <div class="spread">
+    <h1>Plan the week</h1>
+    <div class="row" style="gap:6px">
+      <button class="ghost iconbtn" title="Saved recipes" aria-label="Saved recipes" onclick={() => go('recipes')}>📖</button>
+      <button class="ghost iconbtn" title="Plan ahead: next 6 weeks" aria-label="Plan ahead" onclick={() => { ui.calendar = !ui.calendar; focusWeek = ''; }}>📅<sup>+</sup></button>
     </div>
-  {/if}
-  <h1>{view === 'weeks' ? 'Plan ahead' : 'Plan the week'}</h1>
-  <div class="seg" style="margin:4px 0 8px">
-    <button class:on={view === 'this'} onclick={() => (view = 'this')}>This week</button>
-    <button class:on={view === 'weeks'} onclick={() => (view = 'weeks')}>Next weeks{app.weeks.length ? ` (${app.weeks.length})` : ''}</button>
   </div>
-  {#if view === 'weeks'}
-    <Weeks {go} showThisWeek={() => (view = 'this')} />
+  {#if ui.calendar && !focusWeek}
+    <Calendar onpick={(start) => (focusWeek = start)} onthis={() => (ui.calendar = false)} onclose={() => (ui.calendar = false)} />
+  {:else if ui.calendar && focusWeek}
+    <button class="quiet" onclick={() => (focusWeek = '')}>← All 6 weeks</button>
+    <Weeks {go} focus={focusWeek} showThisWeek={() => { ui.calendar = false; focusWeek = ''; }} />
   {:else}
   <p class="muted">Pick recipes, say who's eating when, and the shopping list and trip rebuild to match.</p>
   {#if err}<div class="err">⚠️ {err}</div>{/if}
@@ -166,12 +177,27 @@
   </div>
 
   <div class="card">
-    <div class="spread"><h3 style="margin:0">3 · Who's eating, and when</h3></div>
-    <div class="row" style="margin:8px 0">
-      <label class="small">Usually feeding <input type="number" min="1" max={app.settings.audience === 'group' ? 500 : 20} value={household} onchange={(e) => setHousehold(e.currentTarget.value)} style="width:64px;display:inline-block"> people</label>
-      <button class="ghost" onclick={() => (days = autoFill(picked, household))}>✨ Fill in Mon–Fri</button>
-      <button class="ghost" onclick={() => days.forEach((d) => SLOTS.forEach((s) => (d[s] = '')))}>Clear</button>
+    <h3 style="margin:0">3 · Who's eating, and when</h3>
+    <p class="sentence">
+      Prep
+      <select class="inl" value={shape.meals.length} onchange={(e) => setMealCount(+e.currentTarget.value)}>{#each [1, 2, 3] as n}<option value={n}>{n}</option>{/each}</select>
+      meal{shape.meals.length === 1 ? '' : 's'} a day for
+      <input class="inl" type="number" min="1" max={app.settings.audience === 'group' ? 500 : 20} value={household} onchange={(e) => { setHousehold(e.currentTarget.value); days = autoFill(picked, household); }} style="width:3.4em" />
+      {household === 1 ? 'person' : 'people'},
+      <select class="inl" value={shape.from} onchange={(e) => reshape({ from: +e.currentTarget.value })}>{#each D3 as d, i}<option value={i}>{d}</option>{/each}</select>–<select class="inl" value={shape.to} onchange={(e) => reshape({ to: +e.currentTarget.value })}>{#each D3 as d, i}{#if i >= shape.from}<option value={i}>{d}</option>{/if}{/each}</select>.
+    </p>
+    <div class="row" style="gap:4px;margin:4px 0 6px">
+      {#each ['breakfast', 'lunch', 'dinner'] as m}<button class="chip" class:on={shape.meals.includes(m)} onclick={() => toggleMeal(m)}>{m[0].toUpperCase() + m.slice(1)}</button>{/each}
+      <button class="chip" class:on={shape.snack} onclick={() => reshape({ snack: !shape.snack })}>{shape.snack ? '✓ Snack' : '+ Add a snack'}</button>
     </div>
+    {#if !app.settings.calorieAsked && !goalOn}
+      <p class="small" style="margin:6px 0">Want a calorie goal for each meal? <button class="quiet" onclick={() => (goalOn = true)}>Yes</button> <button class="quiet" onclick={() => saveSettings({ calorieAsked: true })}>No thanks</button></p>
+    {:else if goalOn}
+      <p class="sentence small" style="margin:6px 0">Aim for about <input class="inl" type="number" min="100" step="50" bind:value={goal} style="width:4.5em" onchange={() => saveSettings({ calorieGoal: +goal || null, calorieAsked: true })} /> calories per meal.
+        <button class="quiet" onclick={() => { goalOn = false; saveSettings({ calorieGoal: null, calorieAsked: true }); }}>Remove</button></p>
+      {#if picked.length}<p class="small muted" style="margin:0 0 6px">{picked.filter(cal).length ? picked.filter(cal).map((r) => `${short(r)}: ${cal(r)} cal ${cal(r) <= goal * 1.1 ? '✓' : '↑'}`).join(' · ') : 'Recipes you save from a link show their calories here when the site lists them.'}</p>{/if}
+    {/if}
+    <details open={app.settings.audience === 'group'}><summary class="small">Adjust day by day</summary>
     <div class="tw"><table class="wk">
       <thead><tr><th>Day</th><th>People</th><th>Breakfast</th><th>Lunch</th><th>Dinner</th><th>Snack</th></tr></thead>
       <tbody>
@@ -187,6 +213,7 @@
       </tbody>
     </table></div>
     <p class="small muted">Tap − / + for guests or a night out. Set a meal to — if you're eating out.</p>
+    </details>
     {#if picked.length && app.settings.audience === 'group'}
       <h3 style="margin-top:12px">How much to make</h3>
       <table><thead><tr><th>Recipe</th><th class="num">Portions</th><th class="num">Makes</th><th class="num">Make</th></tr></thead><tbody>

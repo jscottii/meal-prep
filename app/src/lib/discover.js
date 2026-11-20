@@ -10,7 +10,7 @@ export const CUISINES = [
   ['Caribbean', ['Jamaican', 'Cuban', 'Puerto Rican', 'Trinidadian']], ['Latin American', ['Brazilian', 'Peruvian', 'Argentine', 'Colombian', 'Venezuelan']],
   ['British & Irish', ['British', 'Irish']], ['African', ['Kenyan', 'Nigerian', 'Ethiopian', 'South African', 'Ghanaian']],
 ];
-export const MEAL_TYPES = [['Dinner', null], ['Breakfast', 'Breakfast'], ['Vegetarian', 'Vegetarian'], ['Seafood', 'Seafood'], ['Chicken', 'Chicken'], ['Pasta', 'Pasta'], ['Sides', 'Side'], ['Dessert', 'Dessert']];
+export const MEAL_TYPES = [['Breakfast', 'Breakfast'], ['Chicken', 'Chicken'], ['Beef', 'Beef'], ['Pork', 'Pork'], ['Seafood', 'Seafood'], ['Vegetarian', 'Vegetarian'], ['Vegan', 'Vegan'], ['Pasta', 'Pasta'], ['Lamb', 'Lamb'], ['Sides', 'Side'], ['Dessert', 'Dessert']];
 
 const STAPLE = /^(salt|pepper|black pepper|water|oil|olive oil|vegetable oil|cooking spray|sugar|flour|ice)$/i;
 function sectionOf(name) {
@@ -30,8 +30,8 @@ const shopLine = (l) => l.replace(/\s*\((optional|or more|to taste)[^)]*\)/gi, '
 const mealOf = (cat) => /breakfast/i.test(cat) ? 'Breakfast' : /dessert/i.test(cat) ? 'Snack' : /side|starter/i.test(cat) ? 'Side' : 'Dinner';
 const splitSteps = (t) => String(t || '').split(/\r?\n+|(?<=\.)\s+(?=STEP|\d+\.)/).map((x) => x.replace(/^\s*(step\s*\d+[:.]?|\d+[.)])\s*/i, '').trim()).filter((x) => x.length > 3);
 
-function toParsed({ title, servings, yieldText, cuisine, when, ing, steps, url, shopping }) {
-  return { shopping, recipes: [{ title, servings: servings || 4, yieldText: yieldText || `${servings || 4} servings`, when, fridge: '', freeze: '', ing, steps, tip: '', url, cuisine }] };
+function toParsed({ title, servings, yieldText, cuisine, when, ing, steps, url, shopping, calories }) {
+  return { shopping, recipes: [{ title, servings: servings || 4, yieldText: yieldText || `${servings || 4} servings`, when, fridge: '', freeze: '', ing, steps, tip: '', url, cuisine, calories }] };
 }
 
 /** TheMealDB meal → the shape buildImport takes. */
@@ -57,23 +57,24 @@ export function fromJsonLd(r, url) {
   const cat = [].concat(r.recipeCategory || []).join(' ');
   const shopping = ing.map(shopLine).filter((l) => l && !STAPLE.test(l.replace(/^[\d\s½¼¾⅓⅔./-]+/, '').trim())).map((line) => ({ line, section: sectionOf(line) }));
   return toParsed({ title: String(r.name || 'Recipe').replace(/&amp;/g, '&'), servings, yieldText: String(y || ''), cuisine: [].concat(r.recipeCuisine || [])[0] || '',
-    when: mealOf(cat), ing, steps, url, shopping });
+    when: mealOf(cat), ing, steps, url, shopping, calories: Math.round(Number(String(r.nutrition?.calories || '').match(/[\d.]+/)?.[0])) || null });
 }
 
 const get = (path) => fetch(MEALDB + path).then((r) => { if (!r.ok) throw new Error('The recipe finder is busy — try again in a moment.'); return r.json(); });
-/** Recipe ideas for a cuisine and/or meal type: [{id, title, thumb, area}] */
-export async function findIdeas({ cuisine, type, search }) {
-  let list = [];
-  if (search) list = (await get(`/search.php?s=${encodeURIComponent(search)}`)).meals || [];
-  else if (cuisine) {
-    const areas = (CUISINES.find((c) => c[0] === cuisine) || [cuisine, [cuisine]])[1];
-    const lists = await Promise.all(areas.map((a) => get(`/filter.php?a=${encodeURIComponent(a)}`).then((j) => (j.meals || []).map((m) => ({ ...m, strArea: a }))).catch(() => [])));
-    list = lists.flat();
-    if (type) {   // cross with the meal type
-      const t = (await get(`/filter.php?c=${encodeURIComponent(type)}`)).meals || [];
-      const ok = new Set(t.map((m) => m.idMeal)); list = list.filter((m) => ok.has(m.idMeal));
-    }
-  } else if (type) list = (await get(`/filter.php?c=${encodeURIComponent(type)}`)).meals || [];
-  return list.map((m) => ({ id: m.idMeal, title: m.strMeal, thumb: m.strMealThumb, area: m.strArea || '' }));
+/** Recipe ideas for any of the cuisines, any of the meal types, or a search: [{id, title, thumb, area}] */
+export async function findIdeas({ cuisines = [], types = [], search = '' }) {
+  if (search) return ((await get(`/search.php?s=${encodeURIComponent(search)}`)).meals || []).map(shape);
+  const areas = cuisines.flatMap((c) => (CUISINES.find((x) => x[0] === c) || [c, [c]])[1]);
+  const cats = types.map((t) => (MEAL_TYPES.find((x) => x[0] === t) || [t, t])[1]).filter(Boolean);
+  const pull = (path, extra = {}) => get(path).then((j) => (j.meals || []).map((m) => ({ ...m, ...extra }))).catch(() => []);
+  let byArea = null, byCat = null;
+  if (areas.length) byArea = (await Promise.all(areas.map((a) => pull(`/filter.php?a=${encodeURIComponent(a)}`, { strArea: a })))).flat();
+  if (cats.length) byCat = (await Promise.all(cats.map((c) => pull(`/filter.php?c=${encodeURIComponent(c)}`)))).flat();
+  let list = byArea && byCat ? byArea.filter((m) => byCat.some((x) => x.idMeal === m.idMeal)) : byArea || byCat || [];
+  if (!byArea && !byCat) list = (await Promise.all(['Chicken', 'Beef', 'Vegetarian', 'Seafood', 'Pasta'].map((c) => pull(`/filter.php?c=${c}`)))).flat();
+  const seen = new Set(); list = list.filter((m) => !seen.has(m.idMeal) && seen.add(m.idMeal));
+  for (let i = list.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [list[i], list[j]] = [list[j], list[i]]; }   // a fresh mix each time
+  return list.map(shape);
 }
+const shape = (m) => ({ id: m.idMeal, title: m.strMeal, thumb: m.strMealThumb, area: m.strArea || '' });
 export async function mealDetail(id) { const m = (await get(`/lookup.php?i=${id}`)).meals?.[0]; if (!m) throw new Error('That recipe is gone.'); return m; }

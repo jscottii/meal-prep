@@ -1,5 +1,12 @@
 <script>
-  import { app, start, currentHousehold, joinWithCode, clearPendingCode, MAX_HOUSEHOLDS } from './lib/db.svelte.js';
+  import { app, start, currentHousehold, joinWithCode, clearPendingCode, MAX_HOUSEHOLDS, createHousehold, need, owned } from './lib/db.svelte.js';
+  import { ui, openCart } from './lib/ui.svelte.js';
+  import { enableCollapse } from './lib/collapse.js';
+  import { onMount } from 'svelte';
+  onMount(() => enableCollapse());
+  let fixName = $state('My household'), fixBusy = $state(false), fixCode = $state('');
+  async function fixCreate() { fixBusy = true; try { await createHousehold(fixName || 'My household'); location.reload(); } catch (e) { app.error = e.message; fixBusy = false; } }
+  async function fixJoin() { fixBusy = true; try { await joinWithCode(fixCode); location.reload(); } catch (e) { app.error = e.message; fixBusy = false; } }
   let joinBusy = $state(false), joinErr = $state('');
   async function doJoin() { joinBusy = true; joinErr = ''; try { await joinWithCode(app.pendingJoin.code); } catch (e) { joinErr = e.message; joinBusy = false; } }
   import Login from './routes/Login.svelte';
@@ -13,10 +20,11 @@
   import More from './routes/More.svelte';
   import TimerDock from './components/TimerDock.svelte';
 
-  const TABS = [['trip', '🛒', 'Trip'], ['plan', '📅', 'Week'], ['prep', '🔪', 'Prep'], ['pantry', '🥫', 'Pantry'], ['recipes', '🍲', 'Recipes'], ['receipt', '🧾', 'Receipt'], ['more', '☰', 'More']];
-  let page = $state((location.hash || '').slice(1) || 'trip');
+  const TABS = [['plan', '📅', 'Plan'], ['trip', '🛒', 'Shop'], ['prep', '🔪', 'Prep'], ['pantry', '🥫', 'Pantry'], ['more', '☰', 'More']];
+  const PAGES = ['plan', 'trip', 'prep', 'pantry', 'more', 'recipes', 'prices'];
+  let page = $state(PAGES.includes((location.hash || '').slice(1)) ? location.hash.slice(1) : 'plan');
   function go(p) { page = p; history.replaceState(null, '', '#' + p); window.scrollTo(0, 0); }
-  $effect(() => { const f = () => { const h = location.hash.slice(1); if (h && (TABS.some((t) => t[0] === h) || h === 'prices')) page = h; }; addEventListener('hashchange', f); return () => removeEventListener('hashchange', f); });
+  $effect(() => { const f = () => { const h = location.hash.slice(1); if (PAGES.includes(h)) page = h; else if (h === 'receipt') ui.receipt = true; }; addEventListener('hashchange', f); return () => removeEventListener('hashchange', f); });
   start();
 </script>
 
@@ -24,8 +32,21 @@
   <div class="page row" style="padding-top:30vh;justify-content:center"><span class="spinner"></span> Loading…</div>
 {:else if !app.session}
   <Login />
-{:else if app.error && !app.household}
-  <div class="page"><div class="err">⚠️ {app.error}</div><button onclick={() => location.reload()}>Try again</button></div>
+{:else if !app.household}
+  <div class="page">
+    <h1>Set up your household</h1>
+    {#if app.error}<div class="err">⚠️ {app.error}</div>{/if}
+    <div class="card nocollapse">
+      <h3 style="margin-top:0">Start a new household</h3>
+      <p class="small muted">Your recipes, plans, pantry and shopping lists live in a household. You can invite others later.</p>
+      <div class="row"><input class="grow" bind:value={fixName} placeholder="e.g. The Scotts" /><button onclick={fixCreate} disabled={fixBusy}>{#if fixBusy}<span class="spinner"></span>{/if} Create</button></div>
+    </div>
+    <div class="card nocollapse">
+      <h3 style="margin-top:0">Or join one</h3>
+      <div class="row"><input class="grow" bind:value={fixCode} placeholder="Home code, e.g. WFD-AB12CD" /><button class="ghost" onclick={fixJoin} disabled={fixBusy || !fixCode.trim()}>Join</button></div>
+    </div>
+    <button class="quiet" onclick={() => location.reload()}>Try again</button>
+  </div>
 {:else}
   <TimerDock />
   {#if app.households.length > 1 || app.myInvites.length}
@@ -38,12 +59,31 @@
     {#if page === 'plan'}<Plan {go} />
     {:else if page === 'prep'}<Prep {go} />
     {:else if page === 'pantry'}<Pantry {go} />
-    {:else if page === 'recipes'}<Recipes />
-    {:else if page === 'receipt'}<Receipt {go} />
+    {:else if page === 'recipes'}<Recipes {go} />
     {:else if page === 'prices'}<Prices {go} />
     {:else if page === 'more'}<More {go} />
-    {:else}<Trip {go} />{/if}
+    {:else if page === 'trip'}<Trip {go} />
+    {:else}<Plan {go} />{/if}
   {/key}
+  {#if page !== 'prep'}
+    <button class="cart-fab" aria-label="Shopping carts" onclick={() => (ui.cartPicker = !ui.cartPicker)}>🛒{#if app.carts.length}<span class="fab-badge">{app.carts.length + 1}</span>{/if}</button>
+  {/if}
+  {#if ui.cartPicker}
+    <div class="sheet-back" role="presentation" onclick={() => (ui.cartPicker = false)}></div>
+    <div class="sheet" role="dialog" aria-label="Pick a cart">
+      <h3 style="margin:0 0 8px">Which list?</h3>
+      <button class="sheet-row" class:on={ui.cart === 'home'} onclick={() => { openCart('home'); go('trip'); }}><span>🏠</span><span class="grow"><b>Home list</b><br><span class="small muted">This week's groceries</span></span></button>
+      {#each app.carts as c (c.id)}
+        <button class="sheet-row" class:on={ui.cart === c.id} onclick={() => { openCart(c.id); go('trip'); }}><span>📋</span><span class="grow"><b>{c.name}</b><br><span class="small muted">{c.people ? `${c.people} people` : 'Project list'}{c.event_date ? ` · ${c.event_date}` : ''}</span></span></button>
+      {/each}
+      <button class="sheet-row" onclick={() => { openCart('new'); go('trip'); }}><span>＋</span><span class="grow"><b>New project list</b><br><span class="small muted">A party, an event, one-off meal — give it a title</span></span></button>
+    </div>
+  {/if}
+  {#if ui.receipt}
+    <div class="modal-back" role="presentation">
+      <div class="modal receipt-modal card nocollapse"><button class="quiet modal-x" aria-label="Close" onclick={() => (ui.receipt = false)}>✕</button><Receipt {go} onclose={() => (ui.receipt = false)} /></div>
+    </div>
+  {/if}
   <nav class="tabs">
     <div class="brand"><img src="icon.svg" alt="" width="26" height="26" style="vertical-align:-7px;margin-right:8px;border-radius:6px" />What's for Dinner{#if app.households.length > 1}<button class="hh" onclick={() => { sessionStorage.setItem('mp-more-tab', 'settings'); go('more'); }}>🏠 {currentHousehold()?.name} ▾</button>{/if}</div>
     {#each TABS as [k, ic, label]}<button class:on={page === k} onclick={() => go(k)}><span class="ic">{ic}</span>{label}</button>{/each}

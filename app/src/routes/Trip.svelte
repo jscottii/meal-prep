@@ -4,10 +4,13 @@
   let hideInstall = $state(localStorage.getItem('mp-hide-install') === '1' || matchMedia('(min-width: 900px)').matches);
   import { app, need, portions, itemById, setHave, toast, owned, updatePantry, tripCart, editPurchase } from '../lib/db.svelte.js';
   import CartEditor from '../components/CartEditor.svelte';
+  import OrderBar from '../components/OrderBar.svelte';
+  import { linesFor } from '../lib/order.js';
   import Carts from './Carts.svelte';
-  let view = $state(sessionStorage.getItem('mp-trip-view') || 'week');
-  $effect(() => { sessionStorage.setItem('mp-trip-view', view); });
+  import { ui, openCart } from '../lib/ui.svelte.js';
+  import { untrack } from 'svelte';
   import { covers } from '../lib/pantry.js';
+  import { showAmount } from '../lib/units.js';
   import { shareText, tap } from '../lib/native.js';
   import { trip, planTrip, chosen, drawLine, useMyLocation, startAddress } from '../lib/trip.svelte.js';
   import { directionsUrl } from '../lib/maps.js';
@@ -27,7 +30,11 @@
   let unpriced = $derived(plan ? plan.stores.reduce((a, s) => a + s.items.filter((i) => i.source === 'unpriced').length, 0) : 0);
   let mapsLink = $derived(plan ? directionsUrl(startAddress(), app.settings.homeAddress, plan.stores.map((s) => byId[s.id]).filter(Boolean)) : '');
 
-  $effect(() => { if (app.ready && app.household && !trip.result && !trip.busy && !trip.error && left) planTrip(); });
+  $effect(() => { if (ui.cart === 'home' && app.ready && app.household && !trip.result && !trip.busy && !trip.error && left) planTrip(); });
+  // finishing the list opens the receipt check
+  let prevLeft = untrack(() => left);
+  $effect(() => { const l = left; untrack(() => { if (prevLeft > 0 && l === 0 && cart.length) ui.receipt = true; prevLeft = l; }); });
+  $effect(() => { if (ui.cart !== 'home' && ui.cart !== 'new' && !app.carts.some((c) => c.id === ui.cart)) openCart('home'); });
 
   // the cart: what's checked off and what it cost
   let cart = $derived(tripCart());
@@ -35,7 +42,7 @@
   let cartOf = $derived(Object.fromEntries(cart.map((c) => [c.item.id, c])));
   let toGo = $derived(plan ? plan.stores.reduce((a, st) => a + st.items.filter((it) => !itemById(it.id)?.have).reduce((b, it) => b + (it.price || 0), 0), 0) : 0);
   let editing = $state('');
-  async function saveEdit(c, v) { try { await editPurchase(c.p, v); editing = ''; toast(`✓ ${c.item.name}: ${fmt(c.p.paid)}`); } catch (e) { toast(e.message); } }
+  async function saveEdit(c, v, storeId) { try { await editPurchase(c.p, v, c.item, storeId); editing = ''; toast(`✓ ${c.item.name}: ${fmt(v.total ?? (v.unit_price != null ? v.qty * v.unit_price : 0))}`); } catch (e) { toast(e.message); } }
   const big = $derived(app.settings.audience === 'group');
 
   async function tick(it, storeId) {
@@ -60,14 +67,11 @@
 
 <div class="page">
   {#if !hideInstall && !install.installed}<div style="position:relative"><InstallApp compact /><button class="quiet small" style="position:absolute;right:4px;bottom:2px" onclick={() => { hideInstall = true; localStorage.setItem('mp-hide-install', '1'); }}>Not now</button></div>{/if}
-  <div class="spread"><h1>{view === 'carts' ? 'Project carts' : "This week's trip"}</h1>{#if view === 'week'}<button class="quiet" onclick={() => go('plan')}>Plan a new week →</button>{/if}</div>
-  <div class="seg" style="margin:4px 0 10px">
-    <button class:on={view === 'week'} onclick={() => (view = 'week')}>Weekly trip</button>
-    <button class:on={view === 'carts'} onclick={() => (view = 'carts')}>Projects & events{app.carts.length ? ` (${app.carts.length})` : ''}</button>
-  </div>
-  {#if view === 'carts'}
-    <Carts {go} />
+  {#if ui.cart !== 'home'}
+    <div class="spread"><h1>{ui.cart === 'new' ? 'New project list' : app.carts.find((c) => c.id === ui.cart)?.name || 'Project list'}</h1><button class="quiet" onclick={() => openCart('home')}>🏠 Home list</button></div>
+    <Carts {go} cartId={ui.cart === 'new' ? '' : ui.cart} oncreated={(id) => openCart(id)} />
   {:else}
+  <div class="spread"><h1>This week's list</h1><button class="quiet" onclick={() => (ui.receipt = true)}>🧾 Scan receipt</button></div>
   <p class="muted small">
     {active.length} recipe{active.length === 1 ? '' : 's'}{Object.keys(por).length ? ` · ${Object.values(por).reduce((a, x) => a + x.portions, 0)} portions planned` : ''} · {left} item{left === 1 ? '' : 's'} to buy{bought.length ? `, ${bought.length} already bought` : ''}
   </p>
@@ -129,24 +133,28 @@
         <div class="small muted" style="margin:2px 0 6px 32px">{loc?.label || ''}{loc?.fromStart ? ` · ${loc.fromStart.minutes} min from start` : ''}</div>
         {#each st.items as it}
           {@const item = itemById(it.id)}
-          <label class="check" style:opacity={item?.have ? 0.45 : 1}>
+          <label class="check" class:done={item?.have}>
             <input type="checkbox" checked={!!item?.have} onchange={(e) => (e.currentTarget.checked ? tick(it, st.id) : untick(it.id))} />
-            <span class="grow"><b style:text-decoration={item?.have ? 'line-through' : ''}>{it.name}</b> <span class="muted small">{item?.qty}{n[it.id] && n[it.id] !== item?.units ? ` · buy ${n[it.id]}` : ''}</span><br>
+            <span class="grow"><b style:text-decoration={item?.have ? 'line-through' : ''}>{it.name}</b> <span class="muted small">{showAmount(item?.qty, app.settings.units === 'metric' ? 'metric' : 'imperial')}{n[it.id] && n[it.id] !== item?.units ? ` · buy ${n[it.id]}` : ''}</span><br>
               {#if item?.have && cartOf[it.id]}
                 {@const c = cartOf[it.id]}
                 <span class="small"><b>{c.paid != null ? fmt(c.paid) : 'no price'}</b>{c.p?.qty ? ` · ${c.p.qty} ${c.p.unit}${c.p.unit_price ? ` @ ${fmt(c.p.unit_price)}` : ''}` : ''}{!c.edited ? ' (estimate)' : ''}</span>
-                {#if c.p}<button type="button" class="quiet" style="padding:0 6px" onclick={(e) => { e.preventDefault(); editing = editing === it.id ? '' : it.id; }}>Edit</button>{/if}
+                <button type="button" class="ghost editbtn" onclick={(e) => { e.preventDefault(); e.stopPropagation(); editing = editing === it.id ? '' : it.id; }}>✎ Edit</button>
               {:else}
                 <span class="small muted">{it.source === 'unpriced' ? 'price not checked yet' : fmt(it.price)} <span class="pill" class:live={it.source === 'live' || it.source === 'receipt'}>{src(it.source)}</span></span>
               {/if}</span>
           </label>
-          {#if editing === it.id && cartOf[it.id]?.p}
+          {#if editing === it.id && cartOf[it.id]}
             {@const c = cartOf[it.id]}
-            <CartEditor large={big} line={{ qty: c.p.qty ?? n[it.id] ?? 1, unit: c.p.unit || 'each', unit_price: c.p.unit_price, total: c.paid }} onsave={(v) => saveEdit(c, v)} oncancel={() => (editing = '')} />
+            <CartEditor large={big} line={{ qty: c.p?.qty ?? n[it.id] ?? 1, unit: c.p?.unit || 'each', unit_price: c.p?.unit_price, total: c.paid ?? it.price ?? null }} onsave={(v) => saveEdit(c, v, st.id)} oncancel={() => (editing = '')} />
           {/if}
         {/each}
       </div>
     {/each}
+    <div class="card">
+      <h3 style="margin:0">🚚 Rather have it delivered?</h3>
+      <OrderBar title="WFD · this week" lines={linesFor(Object.fromEntries(Object.entries(n).filter(([id]) => { const i = itemById(id); return i && !owned(i); })))} {go} />
+    </div>
     <p class="small muted">Compared {trip.result.considered} store combinations. <button class="quiet" onclick={planTrip}>↻ Re-plan</button></p>
   {/if}
 

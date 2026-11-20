@@ -1,5 +1,9 @@
 <script>
-  import { app, portions, itemById, setRecipeActive, saveRecipe, deleteRecipe, toast } from '../lib/db.svelte.js';
+  import { app, portions, itemById, setRecipeActive, saveRecipe, deleteRecipe, importRecipeUrl, toast } from '../lib/db.svelte.js';
+  import FindRecipes from '../components/FindRecipes.svelte';
+  let { go } = $props();
+  let adding = $state(false), link = $state(''), linkBusy = $state(false), linkErr = $state(''), finding = $state(false);
+  async function fromLink(e) { e.preventDefault(); linkBusy = true; linkErr = ''; try { const [r] = await importRecipeUrl(link.trim()); link = ''; adding = false; open = r.id; toast(`✓ ${r.title} saved`); } catch (x) { linkErr = x.message; } linkBusy = false; }
   let open = $state(null), editing = $state(null), busy = $state(false), q = $state('');
   let por = $derived(portions());
   let list = $derived(app.recipes.filter((r) => !q || r.title.toLowerCase().includes(q.toLowerCase())).slice().sort((a, b) => (b.active - a.active) || String(b.createdAt).localeCompare(String(a.createdAt))));
@@ -55,13 +59,26 @@
     </div>
     <div class="row"><button onclick={save} disabled={busy}>{#if busy}<span class="spinner"></span>{/if} Save recipe</button><button class="ghost" onclick={() => (editing = null)}>Cancel</button></div>
   {:else}
-    <div class="spread"><h1>Recipes</h1><button onclick={() => edit(null)}>+ New</button></div>
-    <input placeholder="Search recipes" bind:value={q} style="margin:6px 0" />
+    <div class="spread"><h1>Saved recipes</h1><button onclick={() => (adding = !adding)}>+ New</button></div>
+    {#if adding}
+      <div class="card nocollapse">
+        <h3 style="margin-top:0">Add a recipe</h3>
+        <form class="row" onsubmit={fromLink}>
+          <input class="grow" type="url" bind:value={link} placeholder="Paste a link to a recipe" required />
+          <button disabled={linkBusy || !link.trim()}>{#if linkBusy}<span class="spinner"></span>{/if} Save from link</button>
+        </form>
+        {#if linkErr}<div class="err small">⚠️ {linkErr}</div>{/if}
+        <p class="small muted" style="margin:8px 0">The app pulls in the ingredients, steps and shopping items for you.</p>
+        <div class="row"><button class="ghost" onclick={() => { adding = false; edit(null); }}>✏️ Type one in</button><button class="ghost" onclick={() => { adding = false; finding = true; }}>🔎 Find recipes</button></div>
+      </div>
+    {/if}
+    {#if finding}<FindRecipes onclose={() => (finding = false)} />{/if}
+    <input placeholder="Search saved recipes" bind:value={q} style="margin:6px 0" />
     <div class="card">
       {#each list as r}
         <div class="list-row">
           <button class="quiet grow" style="text-align:left;justify-content:flex-start;color:var(--ink);padding:0" onclick={() => (open = open === r.id ? null : r.id)}>
-            <span><b>{r.title}</b><br><span class="small muted">{r.when} · makes {r.servings || '?'}{por[r.id] ? ` · this week ${por[r.id].portions} portions (${por[r.id].scale}×)` : ''}</span></span>
+            <span><b>{r.title}</b><br><span class="small muted">{r.when}{r.cuisine ? ` · ${r.cuisine}` : ''} · makes {r.servings || '?'}{r.calories ? ` · ${r.calories} cal` : ''}{por[r.id] ? ` · this week ${por[r.id].portions} portions (${por[r.id].scale}×)` : ''}</span></span>
           </button>
           <label class="switch" title="Shop for this recipe"><input type="checkbox" checked={r.active} onchange={(e) => setRecipeActive(r.id, e.currentTarget.checked).catch((er) => toast(er.message))} /><span></span></label>
         </div>
@@ -72,7 +89,7 @@
             {#if r.steps.length}<h3>Steps</h3><ol class="small">{#each r.steps as x}<li>{x}</li>{/each}</ol>{/if}
             <p class="small muted">{#if r.fridge}Fridge: {r.fridge}. {/if}{#if r.freeze}Freezer: {r.freeze}.{/if}</p>
             <p class="small"><b>Shopping:</b> {Object.entries(r.items).map(([id, u]) => `${itemById(id)?.name || id}${u !== 1 ? ` ×${u}` : ''}`).join(', ') || 'none linked'}</p>
-            <div class="row">{#if r.source}<a class="small" href={r.source} target="_blank" rel="noopener">Original post ↗</a>{/if}<button class="ghost" onclick={() => edit(r)}>Edit</button><button class="ghost" onclick={() => remove(r)}>Delete</button></div>
+            <div class="row">{#if r.source}<a class="small" href={r.source} target="_blank" rel="noopener">Original ↗</a>{/if}<button class="ghost" onclick={() => edit(r)}>Edit</button><button class="ghost" onclick={() => remove(r)}>Delete</button></div>
           </div>
         {/if}
       {/each}

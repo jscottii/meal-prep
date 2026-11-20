@@ -1,4 +1,5 @@
 <script>
+  import OrderBar from '../components/OrderBar.svelte';
   import { untrack } from 'svelte';
   import { app, need, saveWeek, deleteWeek, startUpcoming, toast, owned } from '../lib/db.svelte.js';
   import { onDestroy } from 'svelte';
@@ -6,7 +7,7 @@
   import { covers } from '../lib/pantry.js';
   import FindRecipes from '../components/FindRecipes.svelte';
   import { linesFor, orderInstacart, orderAmazon, copyAndOpen, shareList, STORES_LINKS } from '../lib/order.js';
-  let { go, showThisWeek } = $props();
+  let { go, showThisWeek, focus = '' } = $props();
 
   const SLOTS = ['breakfast', 'lunch', 'dinner', 'snack'];
   const DAYS5 = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -33,6 +34,11 @@
   $effect(() => {
     weeks.forEach((w) => { const js = JSON.stringify($state.snapshot(w)); untrack(() => { if (last[w.start] !== js) { clearTimeout(timers[w.start]); timers[w.start] = setTimeout(() => flush(w.start), 500); } }); });
   });
+  if (focus && !weeks.some((w) => w.start === focus)) {
+    const hh = Number(app.plan.household) || 3;
+    weeks.push({ start: focus, household: hh, selected: [], days: autoFillPlan([], hh, DAYS5).days });
+    weeks.sort((a, b) => a.start.localeCompare(b.start));
+  }
   const flushAll = () => Object.keys(timers).forEach(flush);
   onDestroy(flushAll);
   $effect(() => { const f = () => document.visibilityState === 'hidden' && flushAll(); document.addEventListener('visibilitychange', f); return () => document.removeEventListener('visibilitychange', f); });
@@ -92,22 +98,7 @@
   }
 </script>
 
-{#snippet orderBar(title, lines)}
-  {#if lines.length}
-    <div class="row" style="gap:6px;margin-top:8px">
-      {#if app.hasInstacartKey}
-        <button onclick={() => order('instacart', title, lines)} disabled={!!busy}>{#if busy === title + 'instacart'}<span class="spinner"></span>{/if} Instacart</button>
-      {:else}
-        <button class="ghost" onclick={() => go('more')} title="Costco same-day, Safeway, Sprouts and more">Instacart: set up</button>
-      {/if}
-      <button class="ghost" onclick={() => order('amazon', title, lines)}>Amazon Fresh / Whole Foods</button>
-      <button class="ghost" onclick={() => order('walmart', title, lines)}>Walmart</button>
-      <button class="ghost" onclick={() => order('safeway', title, lines)}>Safeway</button>
-      <button class="quiet" onclick={() => order('share', title, lines)}>Share list</button>
-    </div>
-    <p class="small muted" style="margin:4px 0 0">Instacart lets you pick the store (Costco same-day, Safeway, Sprouts…) and check out there. Walmart and Safeway.com: the list is copied for you to paste.</p>
-  {/if}
-{/snippet}
+{#snippet orderBar(title, lines)}<OrderBar {title} {lines} {go} />{/snippet}
 
 {#snippet listView(sum)}
   <details>
@@ -125,13 +116,16 @@
   {#if err}<div class="err">⚠️ {err}</div>{/if}
   {#if saved}<p class="small muted" style="text-align:right;margin:0 0 4px">{saved}</p>{/if}
 
+  {#if !focus}
   <div class="card">
     <div class="spread"><h3 style="margin:0">This week <span class="small muted" style="font-weight:400">· {nice(thisWeek)}</span></h3><button class="quiet" onclick={showThisWeek}>Edit →</button></div>
     <p class="small muted" style="margin:4px 0">{app.recipes.filter((r) => r.active).map((r) => r.title).join(' · ') || 'Nothing planned yet.'}</p>
     {#if current.lines.length}{@render listView(current)}{@render orderBar(`WFD · week of ${nice(thisWeek)}`, current.buy)}{:else}<p class="small muted">Everything for this week is bought.</p>{/if}
   </div>
+  {/if}
 
-  {#each weeks as w, wi (w.start)}
+  {#each weeks.filter((x) => !focus || x.start === focus) as w (w.start)}
+    {@const wi = weeks.indexOf(w)}
     {@const sum = summary(listFor(w), wi === 0)}
     <div class="card">
       <div class="spread">
@@ -189,10 +183,12 @@
     </div>
   {/each}
 
+  {#if !focus}
   <div class="row">
     <button onclick={addWeek} disabled={weeks.length >= 6}>+ Add week of {nice(addDays(weeks.at(-1)?.start || thisWeek, 7))}</button>
     <button class="quiet" onclick={() => (finding = finding === 'top' ? '' : 'top')}>🔎 Find more recipes</button>
   </div>
   {#if finding === 'top'}<FindRecipes onclose={() => (finding = '')} onbm={showThisWeek} />{/if}
+  {/if}
   <p class="small muted">Plan up to six weeks ahead. Each week keeps its own shopping list; when a week arrives, tap <b>Start this week</b> and it becomes your trip and cook day.</p>
 </div>

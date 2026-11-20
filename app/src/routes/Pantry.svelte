@@ -1,10 +1,12 @@
 <script>
   import { app, addPantry, updatePantry, removePantry, toast } from '../lib/db.svelte.js';
   import { parseAdd, daysLeft, covers, placeFor, useByFor } from '../lib/pantry.js';
+  import { showAmount } from '../lib/units.js';
+  const mode = $derived(app.settings.units || 'imperial');
   let { go } = $props();
 
   const PLACES = [['fridge', '🧊 Fridge'], ['freezer', '❄️ Freezer'], ['pantry', '🥫 Pantry'], ['counter', '🧺 Counter']];
-  const LEVELS = [['plenty', 'Plenty'], ['some', 'Some'], ['low', 'Low']];
+  const LEVELS = [['plenty', 'Plenty'], ['some', 'Some'], ['low', 'Low'], ['out', 'Out']];
 
   let text = $state(''), busy = $state(false), err = $state(''), q = $state(''), editing = $state(''), showQuick = $state(false);
   let preview = $derived(text.trim() ? parseAdd(text, app.items) : []);
@@ -36,7 +38,7 @@
 
 <div class="page wide">
   <div class="spread"><h1>Pantry</h1><button class="quiet" onclick={() => go('plan')}>Plan from it →</button></div>
-  <p class="muted small">What you already have. Trips skip it, and the Week tab suggests recipes that use it up. Things you check off on a trip or a receipt are added for you.</p>
+  <p class="muted small">What you already have. Trips skip it, and the Plan tab suggests recipes that use it up. Things you check off on a trip or a receipt are added for you.</p>
   {#if err}<div class="err">⚠️ {err}</div>{/if}
 
   <form class="card" onsubmit={addTyped}>
@@ -45,7 +47,7 @@
     </label>
     {#if preview.length}
       <div class="row" style="gap:4px;margin-bottom:8px">
-        {#each preview as r}<span class="pill" class:live={r.item_id}>{r.amount ? r.amount + ' ' : ''}{r.name}{r.item_id ? '' : ' (new)'}</span>{/each}
+        {#each preview as r}<span class="pill" class:live={r.item_id}>{r.amount && mode !== 'relative' ? showAmount(r.amount, mode) + ' ' : ''}{r.name}{r.item_id ? '' : ' (new)'}</span>{/each}
       </div>
     {/if}
     <div class="row">
@@ -87,15 +89,15 @@
       {#each g.rows as p (p.id)}
         <div class="list-row" style="flex-wrap:wrap">
           <button class="grow quiet" style="text-align:left;justify-content:flex-start;color:var(--ink);padding:0" onclick={() => (editing = editing === p.id ? '' : p.id)}>
-            <span><b>{p.name}</b>{#if p.amount} <span class="small muted">· {p.amount}</span>{/if}{#if when(p)}<br><span class="small" style:color={daysLeft(p.use_by) <= 2 ? 'var(--accent)' : 'var(--muted)'}>{when(p)}</span>{/if}</span>
+            <span><b>{p.name}</b>{#if p.amount && mode !== 'relative'} <span class="small muted">· {showAmount(p.amount, mode)}</span>{/if}{#if when(p)}<br><span class="small" style:color={daysLeft(p.use_by) <= 2 ? 'var(--accent)' : 'var(--muted)'}>{when(p)}</span>{/if}</span>
           </button>
           <div class="seg" style="flex:none">
-            {#each LEVELS as [k, label]}<button class:on={(p.level || 'plenty') === k} style="padding:6px 9px;font-size:13px" onclick={() => set(p, { level: k })}>{label}</button>{/each}
+            {#each LEVELS as [k, label]}<button class:on={(p.level || 'plenty') === k} class="lv lv-{k}" onclick={() => set(p, { level: k })}>{label}</button>{/each}
           </div>
           <button class="quiet" aria-label="Used up" title="Used up — remove" onclick={() => drop(p)}>✕</button>
           {#if editing === p.id}
             <div class="grid2" style="width:100%;margin-top:6px">
-              <label class="f">Amount<input value={p.amount || ''} onchange={(e) => set(p, { amount: e.currentTarget.value })} /></label>
+              {#if mode !== 'relative'}<label class="f">Amount<input value={p.amount || ''} placeholder={mode === 'metric' ? 'e.g. 500 g' : 'e.g. 1 lb'} onchange={(e) => set(p, { amount: e.currentTarget.value })} /></label>{/if}
               <label class="f">Where<select value={p.place || 'pantry'} onchange={(e) => set(p, { place: e.currentTarget.value })}>{#each PLACES as [k, label]}<option value={k}>{label}</option>{/each}</select></label>
               <label class="f">Use by<input type="date" value={p.use_by || ''} onchange={(e) => set(p, { use_by: e.currentTarget.value || null })} /></label>
             </div>
@@ -104,5 +106,5 @@
       {/each}
     </div>
   {/each}
-  {#if app.pantry.length}<p class="small muted">Tap an item to change its amount, where it lives, or its use-by date. <b>Low</b> means "buy more": the trip will include it again.</p>{/if}
+  {#if app.pantry.length}<p class="small muted">Tap an item to change its amount, where it lives, or its use-by date. <b>Low</b> or <b>Out</b> means "buy more": the trip will include it again. Change how amounts show (imperial, metric, or just these levels) in More → Settings.</p>{/if}
 </div>

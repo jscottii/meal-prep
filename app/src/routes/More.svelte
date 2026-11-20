@@ -2,6 +2,10 @@
   import InstallApp from '../components/InstallApp.svelte';
   import { app, saveSettings, saveSerpKey, testSerpKey, saveInstacartKey, MAX_HOUSEHOLDS, switchHousehold, createHousehold, acceptInvite, declineInvite, leaveHousehold, renameHousehold, currentHousehold, getJoinCode, resetJoinCode, peekCode, joinWithCode, showCode, inviteLink, invite, signOut, deleteAccount, saveStore, addLocalStores, toast } from '../lib/db.svelte.js';
   import { findLocalChains } from '../lib/maps.js';
+  import { ui } from '../lib/ui.svelte.js';
+  import { instacartStores } from '../lib/order.js';
+  let icZip = $state((String(app.settings.homeAddress || '').match(/\b\d{5}\b/) || [''])[0]), icStores = $state(null), icBusy = $state(false), icErr = $state('');
+  async function icFind() { icBusy = true; icErr = ''; try { icStores = await instacartStores(icZip); if (!icStores.length) icErr = 'No Instacart stores found for that ZIP.'; } catch (e) { icErr = e.message; } icBusy = false; }
   import { trip } from '../lib/trip.svelte.js';
   let { go } = $props();
   let icKey = $state('');
@@ -52,7 +56,7 @@
     const moved = s.homeAddress !== app.settings.homeAddress;
     saving = true;
     try { await saveSettings({ homeAddress: s.homeAddress, mpg: +s.mpg, gasPrice: +s.gasPrice, timeValue: +s.timeValue, timeValueSet: !!s.timeValueSet, stopMinutes: +s.stopMinutes, maxStores: +s.maxStores,
-      costcoMember: !!s.costcoMember, costcoMode: s.costcoMode, householdSize: +s.householdSize, audience: s.audience || 'household', nearestStores: !!s.nearestStores, serpMonthlyLimit: +s.serpMonthlyLimit });
+      costcoMember: !!s.costcoMember, costcoMode: s.costcoMode, householdSize: +s.householdSize, audience: s.audience || 'household', units: s.units || 'imperial', nearestStores: !!s.nearestStores, serpMonthlyLimit: +s.serpMonthlyLimit });
       trip.result = null; toast('✓ Settings saved');
       if (moved) { tab = 'stores'; findLocal(); } }
     catch (e) { toast(e.message); }
@@ -73,6 +77,11 @@
 </script>
 
 <div class="page">
+  <div class="row" style="gap:6px;margin:6px 0 8px">
+    <button class="ghost" onclick={() => go('recipes')}>📖 Saved recipes</button>
+    <button class="ghost" onclick={() => (ui.receipt = true)}>🧾 Scan a receipt</button>
+    <button class="ghost" onclick={() => go('prices')}>💲 Prices</button>
+  </div>
   <div class="seg" style="margin:6px 0 4px">
     {#each [['history', 'History'], ['stores', 'Stores'], ['settings', 'Settings']] as [k, l]}<button class:on={tab === k} onclick={() => (tab = k)}>{l}</button>{/each}
   </div>
@@ -123,7 +132,8 @@
     <h1>Settings</h1>
     <InstallApp />
     <div class="card">
-      <label class="f">Who you cook for<select bind:value={s.audience}><option value="household">My household — keep it simple</option><option value="group">A big group (10+) — show me the details</option></select></label>
+      <label class="f">Who you cook for<select bind:value={s.audience} onchange={() => { saveSettings({ audience: s.audience }); toast(s.audience === "group" ? "✓ Big-group mode: more detail everywhere" : "✓ Household mode: simpler screens"); }}><option value="household">My household — keep it simple</option><option value="group">A big group (10+) — show me the details</option></select></label>
+      <label class="f">Show pantry amounts in<select bind:value={s.units}><option value="imperial">Imperial — lb, oz, cups</option><option value="metric">Metric — kg, g, L</option><option value="relative">Just how much is left — plenty, some, low, out</option></select></label>
       <label class="f">Home address (trips end here)<input bind:value={s.homeAddress} /></label>
       <div class="grid2">
         <label class="f">Usually feeding (people)<input type="number" min="1" bind:value={s.householdSize} /></label>
@@ -160,6 +170,13 @@
       <ol class="small" style="padding-left:18px"><li>Sign in at the <a href="https://docs.instacart.com/developer_platform_api/" target="_blank" rel="noopener">Instacart Developer Platform</a> (Get started) and sign up for access.</li><li>In the dashboard, create an API key (Production if offered; a Development key opens Instacart’s test site).</li><li>Paste it below and press <b>Save</b>.</li></ol>
       <div class="row"><input class="grow" type="password" autocomplete="off" placeholder={app.hasInstacartKey ? 'Saved — paste a new key to replace' : 'Paste your Instacart API key'} bind:value={icKey} />
         <button onclick={icSave} disabled={!icKey.trim()}>Save</button></div>
+      {#if app.hasInstacartKey}
+        <p class="small" style="margin:10px 0 4px"><b>Your usual Instacart store</b> {app.settings.instacartStore ? `· ${app.settings.instacartStore.name}` : '· none (you pick each time)'}</p>
+        <div class="row"><input style="width:7em" inputmode="numeric" placeholder="ZIP" bind:value={icZip} /><button class="ghost" onclick={icFind} disabled={icBusy || !icZip.trim()}>{#if icBusy}<span class="spinner"></span>{/if} Find stores</button>
+          {#if app.settings.instacartStore}<button class="quiet" onclick={() => saveSettings({ instacartStore: null })}>Clear</button>{/if}</div>
+        {#if icErr}<div class="err small">⚠️ {icErr}</div>{/if}
+        {#if icStores}<div class="row" style="gap:4px;margin-top:6px">{#each icStores.slice(0, 30) as st}<button class="chip" class:on={app.settings.instacartStore?.key === st.key} onclick={() => { saveSettings({ instacartStore: { key: st.key, name: st.name } }); toast(`✓ Instacart will open at ${st.name}`); }}>{st.name}</button>{/each}</div>{/if}
+      {/if}
       <p class="small muted">Stored like the SerpApi key: only the app's server can read it.</p>
     </div>
 

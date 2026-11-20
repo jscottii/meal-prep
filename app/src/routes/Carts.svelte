@@ -1,19 +1,21 @@
 <script>
+  import OrderBar from '../components/OrderBar.svelte';
   import { untrack, onDestroy } from 'svelte';
   import { app, createCart, saveCart, archiveCart, cheapestPrice, toast } from '../lib/db.svelte.js';
   import { recipeLines, mergeLines, totals, orderLines, readAmount } from '../lib/carts.js';
   import { parseAdd } from '../lib/pantry.js';
   import { orderInstacart, orderAmazon, copyAndOpen, shareList, STORES_LINKS } from '../lib/order.js';
   import CartEditor from '../components/CartEditor.svelte';
-  let { go } = $props();
+  let { go, cartId = '', oncreated = null } = $props();
 
   const big = $derived(app.settings.audience === 'group');
   const fmt = (x) => (x == null ? '—' : '$' + Number(x).toFixed(2));
-  let openId = $state(app.carts[0]?.id || ''), newName = $state(''), newPeople = $state(''), newDate = $state(''), newBudget = $state('');
+  let openId = $state(cartId), newName = $state(''), newPeople = $state(''), newDate = $state(''), newBudget = $state('');
   let err = $state(''), busy = $state(''), editing = $state(''), addText = $state(''), saved = $state('');
 
   // a working copy of the open cart, saved a moment after each change
   let cart = $state(null);
+  $effect(() => { const id = cartId; untrack(() => { if (id !== openId) openId = id; }); });
   $effect(() => { const id = openId; untrack(() => { flush(); const c = app.carts.find((x) => x.id === id); cart = c ? structuredClone($state.snapshot(c)) : null; last = cart ? JSON.stringify(cart) : ''; }); });
   let last = '', t = null;
   function flush() { clearTimeout(t); if (!cart) return; const snap = $state.snapshot(cart), js = JSON.stringify(snap); if (js === last) return; last = js; saved = 'Saving…'; saveCart(snap).then(() => (saved = 'Saved ✓')).catch((e) => { err = e.message; saved = ''; }); }
@@ -25,7 +27,7 @@
 
   async function make(e) {
     e.preventDefault(); err = '';
-    try { const c = await createCart({ name: newName, people: newPeople, event_date: newDate, budget: newBudget }); openId = c.id; newName = newPeople = newDate = newBudget = ''; } catch (x) { err = x.message; }
+    try { const c = await createCart({ name: newName, people: newPeople, event_date: newDate, budget: newBudget }); openId = c.id; oncreated?.(c.id); newName = newPeople = newDate = newBudget = ''; } catch (x) { err = x.message; }
   }
   function rebuild() {
     const people = Number(cart.people) || 0;
@@ -54,19 +56,14 @@
     } catch (x) { err = x.message; }
     busy = '';
   }
-  async function done() { flush(); try { await archiveCart(cart.id); openId = app.carts[0]?.id || ''; toast('✓ Cart archived'); } catch (x) { err = x.message; } }
+  async function done() { flush(); try { await archiveCart(cart.id); openId = ''; oncreated?.('home'); toast('✓ List archived'); } catch (x) { err = x.message; } }
 </script>
 
 <div>
   {#if err}<div class="err">⚠️ {err}</div>{/if}
-  <div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:8px">
-    {#each app.carts as c (c.id)}<button class="chip" class:on={c.id === openId} onclick={() => (openId = c.id)}>{c.name}</button>{/each}
-    <button class="chip" class:on={!openId} onclick={() => (openId = '')}>+ New cart</button>
-  </div>
-
   {#if !openId || !cart}
     <form class="card" onsubmit={make}>
-      <h3>New cart for a project or one-off meal</h3>
+      <h3>Name your project list</h3>
       <p class="small muted" style="margin-top:0">A birthday dinner, Thanksgiving, chili for youth group — separate from your weekly plan, with its own list and total.</p>
       <label class="f">Name<input bind:value={newName} placeholder="e.g. Friday chili for youth group" required /></label>
       <div class="grid2">
@@ -74,7 +71,7 @@
         <label class="f">Date (optional)<input type="date" bind:value={newDate} /></label>
         <label class="f">Budget (optional)<input type="number" min="0" step="1" bind:value={newBudget} placeholder="$" /></label>
       </div>
-      <button type="submit" disabled={!newName.trim()}>Create cart</button>
+      <button type="submit" disabled={!newName.trim()}>Create list</button>
     </form>
   {:else}
     <div class="card">
@@ -126,13 +123,7 @@
       {#if !cart.lines.length}<p class="small muted">Add a recipe or type items above.</p>{/if}
 
       {#if cart.lines.some((l) => !l.done)}
-        <div class="row" style="gap:6px;margin-top:10px">
-          {#if app.hasInstacartKey}<button onclick={() => order('instacart')} disabled={!!busy}>Instacart</button>{/if}
-          <button class="ghost" onclick={() => order('amazon')}>Amazon Fresh / Whole Foods</button>
-          <button class="ghost" onclick={() => order('walmart')}>Walmart</button>
-          <button class="ghost" onclick={() => order('safeway')}>Safeway</button>
-          <button class="quiet" onclick={() => order('share')}>Share list</button>
-        </div>
+        <OrderBar title={`WFD · ${cart.name}`} lines={orderLines(cart.lines.filter((l) => !l.done))} {go} />
       {/if}
       <div class="row" style="margin-top:12px"><button class="quiet" onclick={done}>Finished — archive this cart</button></div>
     </div>

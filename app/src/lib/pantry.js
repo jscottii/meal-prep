@@ -71,7 +71,7 @@ export function parseAdd(text, items) {
 
 /** Does the pantry cover this shopping item? (Low counts as "need to buy".) */
 export function covers(pantry, itemId) {
-  return pantry.some((p) => p.item_id === itemId && p.level !== 'low');
+  return pantry.some((p) => p.item_id === itemId && !['low', 'out'].includes(p.level));
 }
 
 /* ---------------- ranking recipes by what you have ---------------- */
@@ -80,8 +80,8 @@ export function covers(pantry, itemId) {
  * Weighted by price so having the chicken counts more than having the salt.
  */
 export function rankByPantry(recipes, pantry, items, priceOf = () => 0) {
-  const have = new Map(pantry.filter((p) => p.level !== 'low').map((p) => [p.item_id || 'n:' + tokens(p.name).join(' '), p]));
-  const byName = pantry.filter((p) => p.level !== 'low');
+  const have = new Map(pantry.filter((p) => !['low', 'out'].includes(p.level)).map((p) => [p.item_id || 'n:' + tokens(p.name).join(' '), p]));
+  const byName = pantry.filter((p) => !['low', 'out'].includes(p.level));
   const now = new Date();
   return recipes.map((r) => {
     const ids = Object.keys(r.items || {});

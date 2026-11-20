@@ -132,7 +132,10 @@
   }
   const shortTitle = (t) => String(t).split(/,|\s[–—-]\s/)[0];
 
-  let mode = $state(localStorage.getItem('mp-prep-mode') || 'steps');
+  const big = $derived(app.settings.audience === 'group');
+  let mode = $state(localStorage.getItem('mp-prep-mode') || (untrack(() => app.settings.audience) === 'group' ? 'steps' : 'simple'));
+  $effect(() => { if (big && mode === 'simple') mode = 'steps'; if (!big && mode === 'overview') mode = 'simple'; });
+  let totalPortions = $derived(Object.values(por).reduce((a, x) => a + (x.portions || 0), 0));
   let at = $state(Number(localStorage.getItem('mp-prep-step')) || 0);
   function resume() { mode = 'steps'; at = firstUndone; window.scrollTo(0, 0); }
   $effect(() => { localStorage.setItem('mp-prep-mode', mode); localStorage.setItem('mp-prep-step', String(at)); });
@@ -244,16 +247,35 @@
   {:else}
     <div class="row" style="justify-content:space-between;margin-bottom:8px">
       <div class="seg">
+        {#if !big}<button class:on={mode === 'simple'} onclick={() => (mode = 'simple')}>Recipes</button>{/if}
         <button class:on={mode === 'steps'} onclick={resume}>Step by step</button>
-        <button class:on={mode === 'overview'} onclick={() => (mode = 'overview')}>Overview</button>
+        {#if big}<button class:on={mode === 'overview'} onclick={() => (mode = 'overview')}>Overview</button>{/if}
       </div>
       <label class="row small" style="gap:6px;cursor:pointer" title="Stops the screen from dimming while you cook">
         <span class="switch"><input type="checkbox" bind:checked={awake} /><span></span></span> Keep screen on
       </label>
     </div>
+    {#if big}
+      <div class="card crowd nocollapse">
+        <div class="row" style="gap:16px">
+          <div class="stat"><b>{totalPortions || '—'}</b><span>portions</span></div>
+          <div class="stat"><b>{recipes.length}</b><span>recipes</span></div>
+          <div class="stat"><b>{fmtMins(totalMins)}</b><span>hands-on + cooking</span></div>
+          <div class="stat"><b>{gear.items.reduce((a, e) => a + (e.count || 1), 0)}</b><span>pans & tools</span></div>
+        </div>
+        <div class="small" style="margin-top:8px">{#each recipes as r}<div>• <b>{shortTitle(r.title)}</b> — {por[r.id]?.portions || r.servings || '?'} portions = {times(kOf[r.id])}{r.servings ? ` (recipe serves ${r.servings})` : ''}</div>{/each}</div>
+        <p class="small muted" style="margin:6px 0 0">Every amount in the steps below is already scaled for your group.</p>
+      </div>
+    {/if}
+    {#if mode !== 'simple'}
     <p class="small muted" style="margin:-2px 0 6px">{doneCount} of {allKeys.length} done · about {fmtMins(totalMins)} total{leftMins && leftMins < totalMins ? `, ${fmtMins(leftMins)} to go` : ''}</p>
     <div style="height:6px;background:#efe7dc;border-radius:99px;overflow:hidden;margin-bottom:10px"><div style="height:100%;background:var(--green);width:{allKeys.length ? (doneCount / allKeys.length) * 100 : 0}%"></div></div>
+    {/if}
     {#if err}<div class="err">⚠️ {err}</div>{/if}
+    {#if mode === 'simple'}
+      <p class="small muted" style="margin:0 0 8px">Your recipes for this week, with amounts sized to your plan. Batch cooking? Try <button class="quiet" onclick={resume}>Step by step</button> — it walks you through cooking everything at once.</p>
+      {#each recipes as r}{@render recipeBlock(r)}{/each}
+    {:else}
     {#each missingGuides as g}
       <div class="note small">The cook-day plan for <b>{g.mine.map((r) => r.title).join(', ')}</b> isn't saved yet, so those recipes are listed one at a time.
         <button class="quiet" onclick={() => fetchGuide(g.url)} disabled={loading === g.url}>{#if loading === g.url}<span class="spinner"></span>{/if} Load its plan</button></div>
@@ -365,6 +387,7 @@
           <details style="border-top:1px solid var(--line);padding:8px 0"><summary><b>{r.title}</b></summary>{@render recipeBlock(r)}</details>
         {/each}
       </div>
+    {/if}
     {/if}
   {/if}
 </div>

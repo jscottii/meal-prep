@@ -496,3 +496,6 @@ end $$;
 
 -- 2026-11-20: recipes remember their cuisine
 alter table recipes add column if not exists cuisine text;
+
+-- 2026-11-20b
+alter table recipes add column if not exists calories numeric;
