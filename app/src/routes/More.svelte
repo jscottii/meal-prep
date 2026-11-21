@@ -170,12 +170,14 @@
     </div>
 
     <div class="card">
-      <h3>Delivery: Instacart & Costco same-day</h3>
+      <h3>Delivery: Instacart, Costco & Walmart+</h3>
       <p class="small">Tap <b>Instacart</b> on any shopping list and your items go straight into an Instacart cart. You sign in with your own Instacart account to check out — Costco same-day, Safeway, Sprouts and more are all there, and your Costco membership is linked inside Instacart.</p>
       <div class="row">
         <a class="btn ghost" href="https://www.instacart.com/login" target="_blank" rel="noopener">Sign in to Instacart ↗</a>
         <a class="btn ghost" href="https://sameday.costco.com/" target="_blank" rel="noopener">Costco same-day ↗</a>
+        <a class="btn ghost" href="https://www.walmart.com/account/login" target="_blank" rel="noopener">Sign in to Walmart+ ↗</a>
       </div>
+      <p class="small" style="margin:8px 0 0">Prefer Walmart? Tap <b>Walmart+</b> on any list: your items go into your Walmart cart, and you check out with your own Walmart+ account (free delivery over the minimum).</p>
       <p class="small muted" style="margin:6px 0 0">Signing in once on this device keeps you signed in when the app sends a list.</p>
       {#if app.hasInstacartKey}
         <p class="small" style="margin:10px 0 4px"><b>Your usual Instacart store</b> {app.settings.instacartStore ? `· ${app.settings.instacartStore.name}` : '· none (you pick each time)'}</p>

@@ -10,9 +10,9 @@
       else if (how === 'amazon') orderAmazon(lines);
       else if (how === 'walmart' && app.hasSerpKey) {
         const r = await orderWalmart(lines);
-        note = `Walmart opened with ${r.found.length} item${r.found.length === 1 ? '' : 's'} in the cart — sign in there to check out.${r.missing.length ? ` Not found: ${r.missing.join(', ')}.` : ''}`;
+        note = `Walmart opened with ${r.found.length} item${r.found.length === 1 ? '' : 's'} in your cart — sign in with your Walmart+ account to check out with free delivery.${r.missing.length ? ` Not found: ${r.missing.join(', ')}.` : ''}`;
       }
-      else if (how === 'walmart' || how === 'safeway') { await copyAndOpen(title, lines, STORES_LINKS[how]); toast('✓ List copied — paste it into the store’s search'); }
+      else if (how === 'walmart' || how === 'safeway') { await copyAndOpen(title, lines, STORES_LINKS[how]); toast(how === 'walmart' ? '✓ List copied — sign in to Walmart+ and paste it into search' : '✓ List copied — paste it into the store’s search'); }
       else if ((await shareList(title, lines)) === 'copied') toast('✓ List copied');
     } catch (e) { err = e.message; }
     busy = '';
@@ -23,7 +23,7 @@
 {#if lines.length}
   <div class="row" style="gap:6px;margin-top:8px">
     <button onclick={() => order('instacart')} disabled={!!busy}>{#if busy === 'instacart'}<span class="spinner"></span>{/if} {ic ? `${ic} (Instacart)` : 'Instacart · Costco same-day'}</button>
-    <button class="ghost" onclick={() => order('walmart')} disabled={!!busy}>{#if busy === 'walmart'}<span class="spinner"></span>{/if} Walmart</button>
+    <button class="ghost" onclick={() => order('walmart')} disabled={!!busy}>{#if busy === 'walmart'}<span class="spinner"></span>{/if} Walmart+</button>
     <button class="ghost" onclick={() => order('amazon')}>Amazon Fresh / Whole Foods</button>
     <button class="quiet" onclick={() => order('share')}>Share list</button>
   </div>
