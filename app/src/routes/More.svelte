@@ -29,7 +29,7 @@
     delBusy = true; delErr = '';
     try { await deleteAccount(); location.hash = ''; location.reload(); } catch (e) { delErr = e.message; delBusy = false; }
   }
-  let tab = $state(sessionStorage.getItem('mp-more-tab') || 'history');
+  let tab = $state(sessionStorage.getItem('mp-more-tab') || 'settings');
   sessionStorage.removeItem('mp-more-tab');
   let s = $state({ ...app.settings }), saving = $state(false);
   let key = $state(''), keyBusy = $state(false), keyMsg = $state(null);
@@ -87,7 +87,7 @@
     <button class="ghost" onclick={() => go('prices')}>💲 Prices</button>
   </div>
   <div class="seg" style="margin:6px 0 4px">
-    {#each [['history', 'History'], ['stores', 'Stores'], ['settings', 'Settings']] as [k, l]}<button class:on={tab === k} onclick={() => (tab = k)}>{l}</button>{/each}
+    {#each [['settings', 'Settings'], ['history', 'History'], ['stores', 'Stores']] as [k, l]}<button class:on={tab === k} onclick={() => (tab = k)}>{l}</button>{/each}
   </div>
   <button class="ghost" style="margin:6px 0 0 6px" onclick={() => go('prices')}>🏷️ Prices</button>
 
