@@ -423,7 +423,19 @@ export function fmtMins(m, approx = false) {
  *  - Simmering / braising: the time to get tender doesn't change; only the heat-up of a bigger pot does (k^(1/3)).
  *  - Resting, marinating, chilling, rising: unchanged.
  */
-const PREP_RE = /\b(chop|dice|slice|cut|mince|peel|grate|trim|wash|shred|measure|whisk|mix|toss|assemble|portion|form|shape|roll|stuff|spread|layer|pack|label|scoop)\b/i;
+const CUT_RE = /\b(chop|dice|slice|cut|mince|peel|grate|trim|wash|shred|quarter|julienne|core|seed|zest|crush|pick)\b/i;
+const COMBINE_RE = /\b(measure|whisk|mix|toss|stir|combine|assemble|portion|form|shape|roll|stuff|spread|layer|pack|label|scoop|garnish|season|rub|pour)\b/i;
+const PREP_RE = new RegExp(CUT_RE.source + '|' + COMBINE_RE.source, 'i');
+const HEAT_RE = /\b(heat|cook|boil|simmer|saut|fry|sear|brown|bake|roast|broil|oven|grill|toast|melt|reduce|wok|skillet)/i;
+
+/** Minutes for a recipe step that doesn't say how long it takes. Headings and notes take none. */
+export function estimateMins(text) {
+  const t = String(text || '').trim();
+  if (!t || /:$/.test(t) || /^\*|^note\b|^tip\b|\b(this recipe calls for|you can substitute|available at|do not confuse|if you can't find)\b/i.test(t)) return 0;
+  const sec = t.match(/(\d+)\s*(?:sec|seconds?)\b/i);
+  if (sec && !/\bmin/i.test(t)) return Math.max(1, Math.round(Number(sec[1]) / 60));
+  return t.length < 60 ? 2 : HEAT_RE.test(t) ? 5 : COMBINE_RE.test(t) && !CUT_RE.test(t) ? 2 : 4;
+}
 const BOIL_RE = /\bbring\b.*\bboil\b|\bboil (?:the )?water\b|\buntil boiling\b/i;
 const BIG_PIECE_RE = /\b(whole (?:chicken|turkey|fish)|turkey|brisket|shoulder|pork butt|roast beef|prime rib|leg of lamb|ham\b|tenderloin|meatloaf)\b/i;
 const OVEN_RE = /\b(oven|bake|baked|roast|roasting|broil|sheet pan|baking sheet|baking dish|casserole|°\s*F)\b/i;
@@ -448,7 +460,7 @@ export function scaleTime(text, mins, k = 1, setup = {}, pans = 1) {
   const t = String(text || '').replace(/dutch oven/gi, 'pot'), base = Number(mins) || 0;   // a Dutch oven is a pot, not oven space
   const out = { mins: base, perRound: base, rounds: 1, pans: 0, note: '' };
   if (!base || !(k > 0) || Math.abs(k - 1) < 0.01) return out;
-  const r5 = (x) => Math.max(1, Math.round(x / 5) * 5 || Math.round(x));
+  const r5 = (x) => (x < 10 ? Math.max(1, Math.round(x)) : Math.round(x / 5) * 5);
   if (WAIT_RE.test(t) && !OVEN_RE.test(t) && !SEAR_RE.test(t)) return out;
   if (OVEN_RE.test(t) && BIG_PIECE_RE.test(t)) {
     const f = Math.pow(k, 2 / 3);
@@ -474,7 +486,10 @@ export function scaleTime(text, mins, k = 1, setup = {}, pans = 1) {
     return { ...out, mins: r5(base * batches), perRound: base, rounds: batches, note: batches > 1 ? `brown in ${batches} batches so the pan doesn't steam` : '' };
   }
   if (SIMMER_RE.test(t)) { const f = Math.pow(k, 1 / 3); return { ...out, mins: r5(base * f), perRound: r5(base * f), note: k > 1.5 ? 'a bigger pot takes longer to come back to a simmer; the cooking time itself doesn’t change' : '' }; }
-  if (PREP_RE.test(t)) { const f = Math.pow(k, 0.85); return { ...out, mins: r5(base * f), perRound: r5(base * f), note: '' }; }
+  if (CUT_RE.test(t) && !HEAT_RE.test(t)) { const f = Math.pow(k, 0.85); return { ...out, mins: r5(base * f), perRound: r5(base * f), note: '' }; }
+  if (COMBINE_RE.test(t) && !HEAT_RE.test(t)) { const f = Math.pow(k, 0.4); return { ...out, mins: r5(base * f), perRound: r5(base * f), note: '' }; }   // a bigger bowl, not 4× the stirring
   const f = Math.pow(k, 1 / 3);
   return { ...out, mins: r5(base * f), perRound: r5(base * f) };
 }
+
+export const isCutOnly = (t) => CUT_RE.test(String(t)) && !HEAT_RE.test(String(t));

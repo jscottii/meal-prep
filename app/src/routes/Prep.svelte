@@ -7,7 +7,7 @@
   import { app, portions, guideFor, loadGuide, updatePrep, toast, removePantry, addPantry, patchPlan, patchCartMeta, updateCartPrep } from '../lib/db.svelte.js';
   import { ui, openCart } from '../lib/ui.svelte.js';
   import { usedByRecipes } from '../lib/pantry.js';
-  import { scaleLine, scaleStepHtml, prepLists, cookMinutes, alignSteps, isPrepStep, durationOf, equipmentFor, stepMinutes, fmtMins, scaleTime, pansOf } from '../lib/cookday.js';
+  import { scaleLine, scaleStepHtml, prepLists, cookMinutes, alignSteps, isPrepStep, durationOf, equipmentFor, stepMinutes, fmtMins, scaleTime, pansOf, estimateMins, isCutOnly } from '../lib/cookday.js';
   import { unlockAudio, holdAwake } from '../lib/timers.js';
   import { tap } from '../lib/native.js';
   import Tonight from '../components/Tonight.svelte';
@@ -121,7 +121,11 @@
     // recipes the game plan doesn't cover: longest cook first, so the oven works while you do the rest
     recipes.filter((r) => !covered.has(r.id)).sort((a, b) => cookMinutes(b) - cookMinutes(a))
       .forEach((r) => {
-        const sc = r.steps.map((st) => scaleTime(st, durationOf(st)?.maxMins || 5, kOf[r.id] || 1, setup, pansOf(r)));
+        // steps that just cut things were already counted in Knife prep
+        const sc = r.steps.map((st) => {
+          const base = durationOf(st)?.maxMins ?? (lists.knife.length && isCutOnly(st) ? 1 : estimateMins(st));
+          return scaleTime(st, base, kOf[r.id] || 1, setup, pansOf(r));
+        });
         out.push({ kind: 'recipe', title: r.title, mins: sc.reduce((a, x) => a + x.mins, 0), approx: true, note: sc.map((x) => x.note).filter(Boolean).join(' · '), subs: [{ r, js: r.steps.map((_, j) => j) }] });
       });
     out.push({ kind: 'pack', title: app.settings.audience === 'group' ? 'Hold & serve' : 'Pack it up', mins: 15, approx: true });

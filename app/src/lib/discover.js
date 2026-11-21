@@ -28,7 +28,17 @@ function sectionOf(name) {
 const SMALL = /^[\d\s½¼¾⅓⅔⅛./-]+\s*(teaspoons?|tsp|tablespoons?|tbsp|tbs|cups?|cloves?|pinch(es)?|dash(es)?|sprigs?|handful|stalks?|bunch)\b\.?\s*(of\s+)?/i;
 const shopLine = (l) => l.replace(/\s*\((optional|or more|to taste)[^)]*\)/gi, '').replace(SMALL, '').replace(/,\s*(minced|diced|chopped|sliced|cut|peeled|grated|crushed|finely|thinly|to taste|divided|softened|melted)[^,]*$/i, '').trim();
 const mealOf = (cat) => /breakfast/i.test(cat) ? 'Breakfast' : /dessert/i.test(cat) ? 'Snack' : /side|starter/i.test(cat) ? 'Side' : 'Dinner';
-const splitSteps = (t) => String(t || '').split(/\r?\n+|(?<=\.)\s+(?=STEP|\d+\.)/).map((x) => x.replace(/^\s*(step\s*\d+[:.]?|\d+[.)])\s*/i, '').trim()).filter((x) => x.length > 3);
+const splitSteps = (t) => {
+  const lines = String(t || '').split(/\r?\n+|(?<=\.)\s+(?=STEP|\d+\.)/).map((x) => x.replace(/^\s*(step\s*\d+[:.]?|\d+[.)])\s*/i, '').trim()).filter((x) => x.length > 3);
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    if (/^\*|^note:/i.test(l)) continue;                                    // side notes aren't steps
+    if (/:$/.test(l) && lines[i + 1]) { lines[i + 1] = l.replace(/:$/, '') + ' — ' + lines[i + 1]; continue; }   // "Sauté eggplant:" heads the next line
+    out.push(l);
+  }
+  return out;
+};
 
 function toParsed({ title, servings, yieldText, cuisine, when, ing, steps, url, shopping, calories }) {
   return { shopping, recipes: [{ title, servings: servings || 4, yieldText: yieldText || `${servings || 4} servings`, when, fridge: '', freeze: '', ing, steps, tip: '', url, cuisine, calories }] };
