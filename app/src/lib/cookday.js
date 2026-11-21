@@ -433,7 +433,7 @@ const WAIT_RE = /\b(rest|marinate|chill|refrigerate|cool|rise|proof|soak|set asi
 
 /** How many oven pans one batch of a recipe uses ("two sheet pans" → 2). */
 export function pansOf(r) {
-  const t = (r?.steps || []).join(' ');
+  const t = (r?.steps || []).join(' ').replace(/dutch oven/gi, 'pot');
   const m = t.match(/\b(two|three|four|2|3|4)\s+(?:large\s+)?(?:sheet pans|baking sheets|baking dishes|pans|trays)\b/i);
   const n = m ? ({ two: 2, three: 3, four: 4 }[m[1].toLowerCase()] || Number(m[1])) : 1;
   return OVEN_RE.test(t) ? n : 0;
@@ -445,7 +445,7 @@ export function pansOf(r) {
  * Returns { mins, perRound, rounds, pans, note }
  */
 export function scaleTime(text, mins, k = 1, setup = {}, pans = 1) {
-  const t = String(text || ''), base = Number(mins) || 0;
+  const t = String(text || '').replace(/dutch oven/gi, 'pot'), base = Number(mins) || 0;   // a Dutch oven is a pot, not oven space
   const out = { mins: base, perRound: base, rounds: 1, pans: 0, note: '' };
   if (!base || !(k > 0) || Math.abs(k - 1) < 0.01) return out;
   const r5 = (x) => Math.max(1, Math.round(x / 5) * 5 || Math.round(x));
@@ -453,6 +453,11 @@ export function scaleTime(text, mins, k = 1, setup = {}, pans = 1) {
   if (OVEN_RE.test(t) && BIG_PIECE_RE.test(t)) {
     const f = Math.pow(k, 2 / 3);
     return { ...out, mins: r5(base * f), perRound: r5(base * f), note: `bigger cut: about ${f.toFixed(1)}× the time at the same temperature — go by a thermometer` };
+  }
+  if (SIMMER_RE.test(t)) {
+    // braises and stews: the time to get tender is the same; a fuller pot only takes longer to come up to heat
+    const f = Math.min(1.35, 1 + 0.15 * (k - 1));
+    return { ...out, mins: r5(base * f), perRound: r5(base * f), note: k > 1.5 ? `same temperature — use a bigger pot or two side by side; about ${Math.round((f - 1) * 100)}% longer to come up to heat` : '' };
   }
   if (OVEN_RE.test(t) && !PREP_RE.test(t.split(/[.;]/)[0])) {
     const need = Math.max(1, Math.ceil((pans || 1) * k - 0.01));

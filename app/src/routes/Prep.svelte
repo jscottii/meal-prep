@@ -84,6 +84,8 @@
     const timeSteps = [];
     guides.forEach((g) => {
       if (!g.guide) return;
+      // a cook-day plan only fits when you're making all of its recipes; otherwise go recipe by recipe
+      if (g.mine.length < app.recipes.filter((r) => r.source === g.url).length) return;
       const items = [];
       g.guide.sections.forEach((s, si) => s.kind === 'timeline' && s.items.forEach((it, ii) => items.push({ ...it, key: `t|${g.url}|${si}|${ii}`, text: `${it.label ? it.label + ' — ' : ''}${it.text}` })));
       if (!items.length) return;
